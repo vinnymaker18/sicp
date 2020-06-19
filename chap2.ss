@@ -151,3 +151,76 @@
 ; Addition of two Church numerals n and m is simply composition of n and m.
 ; (define add-church n m)
 ;   (lambda (f) (n (m f))))
+
+; Ex 2.7 Interval arithmetic.
+(define (make-interval a b)
+  (cons a b))
+
+(define (lower-bound interval)
+  (min (car interval) (cdr interval)))
+
+(define (upper-bound interval)
+  (max (car interval) (cdr interval)))
+
+; Add-interval.
+(define (add-interval r1 r2)
+  (let ((a1 (lower-bound r1)) (b1 (upper-bound r1))
+        (a2 (lower-bound r2)) (b2 (upper-bound r2)))
+    (make-interval (+ a1 a2) (+ b1 b2))))
+
+; Mul-interval
+(define (mul-interval r1 r2)
+  (let ((a1 (lower-bound r1)) (b1 (upper-bound r1))
+        (a2 (lower-bound r2)) (b2 (upper-bound r2)))
+    (let ((p1 (* a1 a2))
+          (p2 (* a1 b2))
+          (p3 (* b1 a2))
+          (p4 (* b1 b2)))
+      (make-interval (min p1 p2 p3 p4) (max p1 p2 p3 p4)))))
+
+; reciprocal-interval, assuming the given interval doesn't include zero.
+(define (reciprocal-interval r)
+  (let ((a (lower-bound r)) (b (upper-bound r)))
+    (make-interval (/ 1.0 b) (/ 1.0 a))))
+
+; Div-interval, assuming that the second interval doesn't include zero.
+(define (div-interval r1 r2)
+  (mul-interval r1 (reciprocal-interval r2)))
+
+; Scale-interval, where the interval is multiplied by a scalar.
+(define (scale-interval x r)
+  (let ((a (* x (lower-bound r))) (b (* x (upper-bound r))))
+    (make-interval (min a b) (max a b))))
+
+; Ex 2.8, Sub-interval interval x - y = x + (-1) * y
+(define (sub-interval r1 r2)
+  (add-interval r1 (scale-interval -1 r2)))
+
+; Ex 2.9, Adding or subtracting two intervals results in a width that's 
+; sum of the widths of the argument intervals. Multiplying or dividing
+; intervals, resulting width depends not just upon the widths, but on the 
+; actual lower and upper bounds of the argument intervals.
+
+; Ex 2.10, Here, we redefine reciprocal-interval so that it throws an error
+; when the argument spans zero.
+(define (reciprocal-interval r)
+  (let ((a (lower-bound r)) (b (upper-bound r)))
+    (if (and (<= a 0) (>= b 0))
+      (error "The given interval spans zero, reciprocal is undefined.")
+      (make-interval (/ 1.0 b) (/ 1.0 a)))))
+
+; Ex 2.12
+(define (make-center-percent center tolerance)
+  (let ((width (* 0.01 center tolerance)))
+    (make-interval (- center width) (+ center width))))
+
+(define (center interval)
+  (let ((a (lower-bound interval)) (b (upper-bound interval)))
+    (/ (+ a b) 2.0)))
+
+(define (width interval)
+  (let ((a (lower-bound interval)) (b (upper-bound interval)))
+    (/ (- b a) 2.0)))
+
+; Ex 2.13, 2.14, 2.15 and 2.16 deal with precision arithmetic and how different
+; ways of computing mathematical expressions can have different errors.
