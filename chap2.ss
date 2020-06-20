@@ -201,7 +201,7 @@
 ; intervals, resulting width depends not just upon the widths, but on the 
 ; actual lower and upper bounds of the argument intervals.
 
-; Ex 2.10, Here, we redefine reciprocal-interval so that it throws an error
+; Ex 2.10, Here, we redefine reciprocal-interval so it throws an error
 ; when the argument spans zero.
 (define (reciprocal-interval r)
   (let ((a (lower-bound r)) (b (upper-bound r)))
@@ -209,9 +209,11 @@
       (error "The given interval spans zero, reciprocal is undefined.")
       (make-interval (/ 1.0 b) (/ 1.0 a)))))
 
-; Ex 2.12
+; Ex 2.12 is essentially asking us to define a new interface  for interval
+; arithmetic - one that uses center and tolerance percentages. We can reuse
+; the earlier endpoint based interface.
 (define (make-center-percent center tolerance)
-  (let ((width (* 0.01 center tolerance)))
+  (let ((width (* 0.01 (abs center) tolerance)))
     (make-interval (- center width) (+ center width))))
 
 (define (center interval)
@@ -222,5 +224,48 @@
   (let ((a (lower-bound interval)) (b (upper-bound interval)))
     (/ (- b a) 2.0)))
 
+(define (print-center-percent r)
+  (display (center r))
+  (display " +- ")
+  (display (* 100.0 (/ (width r) (center r))))
+  (newline))
+
 ; Ex 2.13, 2.14, 2.15 and 2.16 deal with precision arithmetic and how different
 ; ways of computing mathematical expressions can have different errors.
+(define (par1 r1 r2)
+  (div-interval (mul-interval r1 r2) (add-interval r1 r2)))
+
+(define (par2 r1 r2)
+  (reciprocal-interval 
+    (add-interval (reciprocal-interval r1) (reciprocal-interval r2))))
+
+; Ex 2.14 par1 and par2 don't always result in the same results, reason being that
+; in computers, floating point arithmetic is not exact and different ways
+; of computing the same algebraic expression can result in different values.
+
+; Ex 2.15 and 2.16, testing with few different intervals, it looks like par2 always 
+; results in lower errors. Here is a simple procedure to help in testing.
+; We take two intervals r1 and r2, we make r2 an integer multiple of r1.
+; that is center(r2) = k * center(r1) where k is a positive integer.
+; We use a small tolerance of 0.001 %, that is our width is 1 / 100000 of
+; the center.
+
+(define (check-parallel-methods k)
+  (let ((tolerance 0.001))
+    (define r1 (make-center-percent 1.0 tolerance))
+    (define r2 (make-center-percent k tolerance))
+    (let ((p1 (par1 r1 r2))
+          (p2 (par2 r1 r2)))
+      (print-center-percent p1)
+      (print-center-percent p2))))
+
+; Ex 2.15 and 2.16, It turns out that par2 always results in an error that is three times 
+; smaller than par1. So, Eva's assertion seems true atleast in case of 
+; parallel resistance computation. In general, I think every occurrence of a 
+; variable contributes to the total error - here, par1 has 4 variables vs par2 has
+; only 2.
+
+; In general, to reduce our total error, we'll need to rewrite a given
+; algebraic expression into an equivalent form that uses the least no. of
+; variable occurrences - I think this is a very hard theoretical problem.
+

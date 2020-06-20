@@ -1,5 +1,5 @@
-; A fixed point of a function f is a value x s.t f(x) = x, if such a value
-; exists.  
+; A fixed point of a function f is a value x s.t f(x) = x. The following
+; iterative technique can sometime converge to a fixed point of the function.
 (define (fixed-point f initial-guess)
 
   (define (fixed-point-iter guess)
