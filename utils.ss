@@ -22,3 +22,27 @@
   (if (not (= 0 (remainder n a)))
     0
     (+ 1 (factor-power (/ n a) a))))
+
+; List of all integers within the given range.
+(define (enumerate-interval a b)
+  (define (iter x)
+    (if (> x b)
+      '()
+      (cons x (enumerate-interval (+ x 1) b))))
+
+  (iter a))
+
+; flatmap takes a list, a function that operates on elements of the list
+; and which produces lists - flatmap then appends all the lists together into a 
+; single list. Flatmap is a frequently useful abstraction.
+(define (flatmap proc sequence)
+  (accumulate append '() (map proc sequence)))
+
+; primality check.
+(define (prime? n)
+  (define (iter x)
+    (or (> (* x x) n)
+        (and (not (= 0 (remainder n x)))
+             (iter (+ x 1)))))
+  
+  (and (> n 1) (iter 2)))
