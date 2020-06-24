@@ -864,3 +864,92 @@
     ((list? expr)
       (process-expr-list expr '() unity))
     (else 0)))
+
+; Section 2.3.3 Set data structure.
+; Set data abstraction consists of the operations - element-of-set?, 
+; adjoin-set, intersection-set, union-set. We explore possible alternatives 
+; for set representation and their performance implications.
+
+; Our first choice for set representation is to use lists of distinct elements.
+(define (element-of-set? elem set)
+  (cond
+    ((null? set) #f)
+    ((equal? (car set) elem) #t)
+    (else (element-of-set? elem (cdr set)))))
+
+(define (adjoin-set elem set)
+  (cond
+    ((element-of-set? elem set) set)
+    (else (cons elem set))))
+
+(define (intersection-set set1 set2)
+  (cond
+    ((or (null? set1) (null? set2)) '())
+    (else (let ((f1 (car set1)) (r1 (intersection-set (cdr set1) set2)))
+            (if (element-of-set? f1 set2)
+              (cons f1 r1)
+              r1)))))
+
+; Ex 2.59
+(define (union-set set1 set2)
+  (accumulate adjoin-set set2 set1))
+
+; Ex 2.60
+; Allowing for duplicates lets us simplify some of the set operations.
+; element-of-set? and intersection-set remain same, adjoin-set is simply cons
+; and union-set is simply list append
+
+; Ex 2.61
+; adjoin-set operation under ordered list representation of sets.
+(define (adjoin-set-2 elem set)
+  (cond
+    ((null? set) (list elem))
+    ((= (car set) elem) set)
+    ((< (car set) elem) (cons (car set) (adjoin-set-2 elem (cdr set))))
+    (else (cons elem set))))
+
+; Ex 2.62
+; union-set operation using ordered list representation.
+(define (union-set-2 set1 set2)
+  (cond
+    ((null? set1) set2)
+    ((null? set2) set1)
+    (else (let ((x1 (car set1)) (x2 (car set2)))
+      (cond
+        ((= x1 x2) (cons x1 (union-set-2 (cdr set1) (cdr set2))))
+        ((< x1 x2) (cons x1 (union-set-2 (cdr set1) set2)))
+        (else (cons x2 (union-set-2 set1 (cdr set2)))))))))
+
+; Binary search tree representation of sets.
+
+; Ex 2.63
+; Both tree->list-1 and tree->list-2 produce the same result for any tree -
+; the list of all the tree entries in sorted order. 
+; tree->list-2 is O(n) (n is no. of nodes in tree) for any tree shape because
+; it starts with an empty list and keeps consing onto it one element at a time.
+;
+; tree->list-1 is O(n^2) because it appends two subtree lists into a single 
+; list. Imagine a right leaning chain of n nodes (each node has empty left tree).
+; tree->list-1 is theta(n^2) in such cases.
+
+; Ex 2.64
+; partial-tree splits a list into two sublists(sub-trees) of roughly equal size.
+; Because it does this recursively at every level, resulting binary tree will
+; be a balanced binary tree and it's height will be O(logN)  where N is the 
+; tree(list) size.
+;
+; Overall, list->tree is O(N) both in time and memory, where N is input list
+; size. If F(n) denotes the runtime for list->tree on list of size n, then
+; F(N) = F(N / 2) + F(N / 2) + O(1) (O(1) for make-tree operation). Overall,
+; there are N make-tree operations and N recursive function calls, thus the 
+; total complexity is O(N), both memory wise and cpu wise.
+
+; Ex 2.65
+; Given two sets in BST representation, we can call tree->list-2 on each of 
+; them to produce 2 sorted lists in O(n) time and call the intersection-set,
+; union-set procedures on these sorted lists. Both these operations are O(n)
+; with sorted list representation, overall complexity is O(n).
+
+; Ex 2.66
+; lookup for a BST representation of database is same as the element-of-set?
+; method of set in BST representation. I'm not going to implement it.
