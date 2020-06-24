@@ -422,22 +422,7 @@
 ; ations being performed.
 
 ; Filter is not a scheme builtin, so we define our own.
-(define (filter predicate? elems)
-  (if (null? elems)
-    '()
-    (let ((rest (filter predicate? (cdr elems))))
-      (if (predicate? (car elems))
-        (cons (car elems) rest)
-        rest))))
-
 ; Map is a builtin, no need to implement our own.
-
-; Let's now define reduce aka accumulate.
-(define (accumulate op initial elems)
-  (if (null? elems)
-    initial
-    (op (car elems)
-        (accumulate op initial (cdr elems)))))
 
 ; Ex 2.33
 ; (map p sequence) = (accumulate (lambda (e s) (cons (p e) s)) '() sequence)
@@ -574,3 +559,308 @@
 
 ; But in the original algorithm, queen-cols(k - 1) will be evaluated only once.
 ; F(k) = F(k - 1) + O(R(k - 1) * n)
+
+; There's no way we can actually test painter operations without implementing
+; a few basic painters.
+;
+; Ex 2.44
+; up-split is similar to right split
+
+; Dummy definitions for below and beside.
+(define (below painter1 painter2)
+  painter1)
+(define (beside painter1 painter2)
+  painter2)
+
+(define (up-split painter n)
+  (if (= n 0)
+    painter
+    (let ((smaller (up-split painter (- n 1))))
+      (below painter (beside smaller smaller)))))
+
+; Ex 2.45
+(define (split op1 op2)
+  (lambda (painter n)
+    (if (= n 0)
+      painter
+      (let ((smaller ((split op1 op2) (- n 1))))
+        (op1 painter (op2 smaller smaller))))))
+
+; Ex 2.46 2-d vectors.
+(define (make-vect x y)
+  (cons x y))
+
+(define (x-coord vec)
+  (car vec))
+
+(define (y-coord vec)
+  (cdr vec))
+
+(define (add-vect vec1 vec2)
+  (let ((x1 (x-coord vec1)) (y1 (y-coord vec1))
+        (x2 (x-coord vec2)) (y2 (y-coord vec2)))
+    (make-vect (+ x1 x2) (+ y1 y2))))
+
+(define (scale-vect scale vec)
+  (let ((x (x-coord vec)) (y (y-coord vec)))
+    (make-vect (* scale x) (* scale y))))
+
+(define (sub-vect vec1 vec2)
+  (add-vect vec1 (scale-vect -1 vec2)))
+
+; Ex 2.47 we only use the list constructor.
+(define (make-frame origin edge1 edge2)
+  (list origin edge1 edge2))
+
+(define (origin-frame frame)
+  (car frame))
+(define (edge1-frame frame)
+  (cadr frame))
+(define (edge2-frame frame)
+  (caddr frame))
+
+; Image ([0,0] x [1,1] unit square coordinates) to frame coordinate mapper
+; function.
+(define (frame-coord-map frame)
+  (lambda (ivec)
+    (add-vect (origin-frame frame)
+                (add-vect (scale-vect (x-coord ivec) (edge1-frame frame))
+                          (scale-vect (y-coord ivec) (edge2-frame frame))))))
+
+; Ex 2.48 2-d line segment. 
+(define (make-segment start end)
+  (cons start end))
+(define (start-segment segment)
+  (car segment))
+(define (end-segment segment)
+  (cdr segment))
+
+; Ex 2.49, We assume the existence of segments->painter.
+; A, B, C, D are four corners of the frame.
+; A - (origin-frame frame)
+; B - (add-vector A (edge1-frame frame))
+; C - (add-vector B (edge2-frame frame))
+; D - (add-vector A (edge2-frame frame))
+; a) (segments->painter (list (make-segment A B) (make-segment B C) 
+;      (make-segment C D) (make-segment D A))
+
+; b) (segments-painter (list (make-segment A C) (make-segment B D)))
+; c) define a procedure to find midpoint of a segment and use it.
+; d) the `wave` painter paints a human standing and waving with her right 
+; hand. It can be implemented as a segment-painter with a series of line segments 
+
+; Exercises 2.50 - 2.52 not included.
+
+; Section 2.3
+; We learn to work with symbolic data.
+
+; Ex 2.53
+; (a b c)
+; ((george))
+; ((y1 y2))
+; #f
+; (y1 y2)
+; #f
+; (red shoes blue socks)
+
+; Ex 2.54
+; equal? is already a scheme builtin.
+(define (my-equal? a b)
+  (cond ((and (symbol? a) (symbol? b)) (eq? a b))
+        ((and (null? a) (null? b)) #t)
+        ((and (list? a) (list? b))
+            (and (my-equal? (car a) (car b))
+                 (my-equal? (cdr a) (cdr b))))
+        (else #f)))
+
+; Ex 2.55
+; quote is a scheme keyword. quote special form quotes its argument form.
+; thus the symbol 'a and (quote a) are eq? to each other.
+; thus if we have a form like ''abcdef, it's equal? to '(quote abcdef)
+; which is a list containing 2 symbols 'quote and 'abcdef
+; this is why we can call car on expressions like ''abcdef and we'll get
+; quote.
+
+; Section 2.3.2 Symbolic differentiation.
+
+; Check for numbers
+(define (=number? expr num)
+  (and (number? expr) (= expr num)))
+
+; variable
+(define (variable? e)
+  (symbol? e))
+
+(define (same-variable? v1 v2)
+  (and (variable? v1) (variable? v2) (eq? v1 v2)))
+
+; sum
+(define (sum? e)
+  (and (list? e) (eq? (car e) '+)))
+
+; sum expressions can handle arbitrary number of addend terms.
+(define (make-sum . es)
+  (cons '+ es))
+
+; First summand.
+(define (addend sum-expr)
+  (cond
+    ((null? sum-expr) 0) ; '()
+    ((= 1 (length sum-expr)) 0) ; '(+)
+    (else (cadr sum-expr))))
+
+; rest of the summands
+(define (augend sum-expr)
+  (cond
+    ((null? sum-expr) 0)
+    ((null? (cdr sum-expr)) 0)
+    ((null? (cddr sum-expr)) 0)
+    (else (apply make-sum (cddr sum-expr)))))
+
+; product
+(define (product? e)
+  (and (list? e) (eq? (car e) '*)))
+
+(define (multiplier e)
+  (cadr e))
+(define (multiplicand e)
+  (caddr e))
+
+(define (make-product e1 e2)
+  (cond
+    ((=number? e1 0) 0)
+    ((=number? e2 0) 0)
+    ((=number? e1 1) e2)
+    ((=number? e2 1) e1)
+    (else (list '* e1 e2))))
+
+; exponentiation with a numeric exponent.
+(define (make-exponent base power)
+  (cond
+    ((=number? power 0) 1)
+    ((=number? power 1) base)
+    (else (list '** base power))))
+
+(define (exponentiation? expr)
+  (and (list? expr) (eq? '** (car expr))))
+
+(define (get-base expr)
+  (cadr expr))
+(define (get-power expr)
+  (caddr expr))
+
+; Derivative of an expression w.r.t a variable.
+;
+; Includes Ex 2.56, 2.57 but only accepts arbitrary no. of terms for
+; sum expressions. Main idea is that deriv procedure depends only on
+; addend/augend abstractions, but not on internal representations which
+; improves code modularity and allows programmers to experiment with 
+; various representation schemes. Additionally, choosing good abstractions
+; improves extensibility of programs as seen in this example. 
+(define (deriv expr var)
+  (cond
+    ((number? expr) 0)
+    ((same-variable? expr var) 1)
+    ((variable? expr) 0)
+    ((sum? expr)
+        (let ((e1 (addend expr))
+              (e2 (augend expr)))
+          (make-sum (deriv e1 var) (deriv e2 var))))
+    ((product? expr)
+        (let ((e1 (multiplier expr))
+              (e2 (multiplicand expr)))
+          (make-sum
+            (make-product e2 (deriv e1 var))
+            (make-product e1 (deriv e2 var)))))
+    ((exponentiation? expr)
+      (let ((base (get-base expr))
+            (n (get-power expr)))
+        (let ((f1 (deriv base var)))
+          (make-product
+            (make-product n (make-exponent base (- n 1)))
+            f1))))
+    ((infix-expr? expr)
+      (deriv (parse-infix-expr expr) var))
+    (else 0)))
+
+; Ex 2.58
+; for part a, it's simply a matter of modifying selectors and constructors of
+; sum and product objects. Because `deriv` only uses these abstractions and
+; doesn't directly access internal representations, it needs no changes.
+; Modifying selectors and constructors to handle this part is easy enough 
+; because there are always exactly 2 terms in sums and products and position
+; of operators +/* is fixed in the middle. This is the whole point of this 
+; exercise - by choosing suitable abstractions, we can separate the code
+; that uses the objects from their representations - this way, our user level
+; code(in this case, deriv procedure) doesn't have to change.
+
+; part b is a much harder problem because we're dealing with arbitrarily 
+; complex algebraic sum/product expressions.
+; a given expression needs to be parsed to separate out sub-expressions 
+; into addend/augends or multiplier/multiplicands.
+
+; expr could be a number, a symbol or an infix algebraic expression with +/* 
+; operators.
+; e.g. 1, a, (a + b + c), (a + b * c + e * (1 + x))
+
+; Out goal is to have `deriv` procedure work with infix expressions. We will
+; need to modify it so that it tests for infix expressions and calls
+; appropriate selectors/routines.
+
+; We note that operator * has lower precedence than + and both operators are
+; left associative.
+; An expression like a + b * c can be parsed as (make-sum a (make-product b c))
+
+; For simplicity, we only deal with variables that are single lowercase letters. 
+(define (good-variable? expr)
+  (and
+    (symbol? expr)
+    (let ((estr (symbol->string expr)))
+      (and
+        (= 1 (string-length estr))
+        (char-lower-case? (string-ref estr 0))))))
+
+; Infix expressions are lists whose elements can be numbers, symbols, operators
+; and other infix expressions enclosed in parentheses. 
+;
+; Checks whether the expression is an infix-expression.
+(define (infix-expr? expr)
+  (cond
+    ((number? expr) #t)
+    ((good-variable? expr) #t)
+    ((list? expr)
+     (let ((operators (ifilter (lambda (pair) (odd? (cdr pair))) expr))
+           (terms (ifilter (lambda (pair) (even? (cdr pair))) expr)))
+       (and
+         (all? (lambda (pair) (or (eq? '+ (car pair)) (eq? '* (car pair)))) operators)
+         (all? (lambda (pair) (infix-expr? (car pair))) terms))))
+    (else #f)))
+
+; We have a way to detect whether a given expression is infix. We need to parse
+; such expressions into equivalent sum/product expressions. In `deriv`, we will
+; then first check for infix expressions and convert them into sum/product 
+; expressions.
+(define (parse-infix-expr expr)
+
+  (define unity 1)
+
+  (define (process-expr-list expr terms next_term)
+    (if (null? expr)
+      (apply make-sum (cons next_term terms))
+      (let ((token (car expr))
+            (rest (cdr expr)))
+        (cond
+          ((eq? token '+) (process-expr-list rest (cons next_term terms) unity)) ; A new term begins
+          ((eq? token '*) (process-expr-list rest terms next_term))
+          (else (process-expr-list
+                        rest
+                        terms 
+                        (make-product next_term (parse-infix-expr token))))))))
+
+  (cond
+    ((not (infix-expr? expr)) (error "Invalid infix expression argument"))
+    ((number? expr) expr)
+    ((good-variable? expr) expr)
+    ((list? expr)
+      (process-expr-list expr '() unity))
+    (else 0)))
