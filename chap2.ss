@@ -953,3 +953,140 @@
 ; Ex 2.66
 ; lookup for a BST representation of database is same as the element-of-set?
 ; method of set in BST representation. I'm not going to implement it.
+
+; Section 2.3.4 Huffman encoding. 
+
+; Huffman tree representation - leaf nodes, non-leaf nodes etc...
+(define (make-leaf symbol weight)
+  (list 'leaf symbol weight))
+
+(define (leaf? node)
+  (eq? 'leaf (car node)))
+
+(define (symbol-leaf node)
+  (cadr node))
+
+(define (weight-leaf node)
+  (caddr node))
+
+(define (make-code-tree left right)
+  (list
+    left
+    right
+    (append (symbols left) (symbols right))
+    (+ (weight left) (weight right))))
+
+(define (left-branch tree)
+  (car tree))
+
+(define (right-branch tree)
+  (cadr tree))
+
+(define (symbols tree)
+  (if (leaf? tree)
+    (list (symbol-leaf tree))
+    (caddr tree)))
+
+(define (weight tree)
+  (if (leaf? tree)
+    (weight-leaf tree)
+    (cadddr tree)))
+
+; Note - we use slightly different names for some of the procedures below.
+;
+; Decoding algorithm - given a bit sequence and a huffman tree, it decodes the
+; sequence into the original message. 
+(define (decode-huffman bits tree)
+
+  (define (decode-internal bits node)
+    (cond
+      ((leaf? node) (cons (symbol-leaf node) (decode-internal bits tree)))
+      ((null? bits) '())
+      ((= 0 (car bits)) (decode-internal (cdr bits) (left-branch node)))
+      (else (decode-internal (cdr bits) (right-branch node)))))
+  
+  (decode-internal bits tree))
+
+; For generating huffman encoding trees, we need to work with sets of 
+; nodes and keep adding two smallest elements at every step. An ordered list
+; representation of sets make this task easier.
+
+; Inserts a node into an ordered set of nodes at the right index.
+(define (insert-huffman-set x set)
+  (cond
+    ((null? set) (list x))
+    (else (let ((fst (car set)) (rst (cdr set)))
+      (if (< (weight x) (weight fst))
+        (cons x set)
+        (cons fst (insert-huffman-set x rst)))))))
+
+; Ex 2.69
+; Huffman encoding tree generation algorithm - takes a list of (symbol, weight)
+; pairs and constructs a code tree structure.
+(define (generate-huffman-tree weighted-symbols)
+
+  ; Keep merging the two smallest elements at each step until only one node
+  ; remains.
+  (define (generate-huffman-internal nodes)
+    (cond
+      ((= 1 (length nodes)) (car nodes))
+      (else (generate-huffman-internal (insert-huffman-set
+              (make-code-tree (car nodes) (cadr nodes))
+              (cddr nodes))))))
+  
+  (define (order-nodes nodes)
+    (cond
+      ((null? nodes) '())
+      (else (insert-huffman-set (car nodes) (order-nodes (cdr nodes))))))
+
+  (generate-huffman-internal
+    (order-nodes
+      (map (lambda (pair) (make-leaf (car pair) (cdr pair))) weighted-symbols))))
+
+; Ex 2.67
+; Decoding the given message gives us the message "ADABBCA"
+
+; Ex 2.68
+(define (encode-huffman message tree)
+  (if (null? message)
+    '()
+    (append (encode-huffman-symbol (car message) tree) 
+            (encode-huffman (cdr message) tree))))
+
+(define (encode-huffman-symbol symbol tree)
+  (if (leaf? tree)
+    (if (eq? (symbol-leaf tree) symbol)
+      '()
+      (error "Symbol not present in tree"))
+    (let ((left (left-branch tree)) (right (right-branch tree)))
+      (if (memq symbol (symbols left))
+        (cons 0 (encode-huffman-symbol symbol left))
+        (cons 1 (encode-huffman-symbol symbol right))))))
+
+; Encoding the result from 2.67 returns the correct result using the above
+; encode-huffman procedure.
+
+; Ex 2.69 is implemented in generate-huffman-tree procedure above. Note, we're 
+; using different names here from those in the book. 
+
+; Ex 2.70
+; Encoding the given song resulted in the sequence
+; (1 1 1 1 1 1 1 1 1 0 1 1 0 0 1 1 1 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 0 1 1 0 0 1 1 1 0 0 0 0 0 0 0 0 0 1 1 0 1 1 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 1 1 0 1 1 0 1 0)
+; which has 84 bits in it.
+;
+; With fixed bit encoding, we must use 3 bits per symbol. The original message 
+; has 36 symbols in it, so it would need 36x3 = 108 bits. Using the huffman 
+; encoding is clearly better which is expected.
+
+; Ex 2.71
+; With n symbols having weights (2^0, 2^1 ... 2^(n-1)), the resulting huffman 
+; tree will have every internal node has one of its children a leaf node.
+; height of such a tree will be n. In such an encoding, most common symbol
+; will need 1 bit and least common symbol will need (n - 1) bits.
+
+; Ex 2.72
+; In the specialized case of 2.71, a symbol of frequency 2^i will need 
+; i bits to encode and O(n^2) symbol set searches are required in order to 
+; reach the symbol. For the most frequent symbol - will need O(n) set searches
+; and 1 bit to encode. For the least frequent symbol - will need theta(n^2)
+; set searches and n - 1 bits to encode.
