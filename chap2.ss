@@ -1294,3 +1294,52 @@
     (map
       (lambda (file) (get-record file emp-name))
       personnel-files)))
+
+; When a new company is acquired, glue code that translates from their existing
+; interfaces to Insatiable's interfaces needs to be written.
+
+; Ex 2.75
+(define (make-from-mag-angle mag ang)
+  (define (dispatch op)
+    (cond
+      ((eq? op 'magnitude) mag)
+      ((eq? op 'angle) ang)
+      ((eq? op 'real-part)
+        (* (cos ang) mag))
+      ((eq? op 'imag-part)
+       (* (sin ang) mag))
+      (else (error "Invalid operation" op))))
+
+  dispatch)
+
+; Ex 2.76
+; With explicit dispatch, whenever a new type is introduced into the system,
+; all the relevant existing generic procedures must be modified to accomodate 
+; this type, which can require a lot of changes in many different places.
+; When a new generic operation is defined, it must be compatible with all the
+; relevant existing types. Because this is typically implemented as a bunch of
+; if/else condition chains, it gets messier and more prone to bugs. 
+; 
+; With data directed programming, when introducing a new generic procedure, 
+; we must define its implementations for all relevant and existing types and 
+; register them with the dispatch table. Likewise when a new type is defined,
+; we must identify its abstract interface, implement that interface for all its
+; representations and register them in the table.
+
+; With message passing, when a new generic procedure is introduced, it must be 
+; implemented for all the relevant existing types. Whenever a new type is
+; defined, it's abstract interface must be specified and implemented for its
+; representations.
+
+; If we're often introducing new types, then we have a lot of types and a few
+; generic procedures. It's more or less equal work with either message passing
+; or data directed programming (see the 2 paragraphs above). Message passing
+; technique is preferred because it cleanly separates different types and 
+; improves modularity of the program.
+
+; If we're often introducing new generic operations, then we have a small no.
+; of types and quite a no. of operations. With message passing system, we'll
+; have to change existing code for types every time a new operation is added.
+; It's not going to be additive. With data directed programming, by simply adding 
+; new implementations and regsiter them in the table, we don't have to change
+; any existing code. So, DDP is to be preferred here.
