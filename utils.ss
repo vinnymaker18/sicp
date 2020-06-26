@@ -11,6 +11,11 @@
     (car lst)
     (nth (cdr lst) (- i 1))))
 
+; Remove an item from list if it exists and return the remaining elements 
+; in a new list.
+(define (list-remove x seq)
+  (filter (lambda (e) (not (equal? x e))) seq))
+
 ; Integer exponentiation. 
 (define (ipow a x)
   (if (=  x 0) 

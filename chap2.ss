@@ -1080,13 +1080,217 @@
 
 ; Ex 2.71
 ; With n symbols having weights (2^0, 2^1 ... 2^(n-1)), the resulting huffman 
-; tree will have every internal node has one of its children a leaf node.
-; height of such a tree will be n. In such an encoding, most common symbol
+; tree will have every internal node having a leaf node as one of its children.
+; Height of such a tree will be n. In such an encoding, most common symbol
 ; will need 1 bit and least common symbol will need (n - 1) bits.
 
 ; Ex 2.72
-; In the specialized case of 2.71, a symbol of frequency 2^i will need 
+; In the special case of 2.71, a symbol of frequency 2^i will need 
 ; i bits to encode and O(n^2) symbol set searches are required in order to 
-; reach the symbol. For the most frequent symbol - will need O(n) set searches
+; reach the symbol. For the most frequent symbol - will need theta(n) set searches
 ; and 1 bit to encode. For the least frequent symbol - will need theta(n^2)
 ; set searches and n - 1 bits to encode.
+
+; Section 2.4
+; Multiple data representations aka polymorphism in common parlance. We learn
+; how to incorporate multiple designs(representations of a data object) into
+; the same program by using `generic procedures` (aka interfaces), tagged types 
+; and data-directed programming. 
+
+; attach-tag, type-tag and contents can be used to tag data with types and
+; in defining generic procedures that can support multiple representations
+; of data.
+(define (attach-tag tag contents)
+  (cons tag contents))
+
+(define (type-tag data)
+  (if (pair? data)
+    (car data)
+    (error "Not valid type-tagged data")))
+
+(define (contents data)
+  (if (pair? data)
+    (cdr data)
+    (error "Not valid type-tagged data")))
+
+; Ex 2.73
+; a) Essentially, we're defining the `deriv` operation for various types of
+; expressions. For numbers and variables, because we used them in their raw 
+; form (i.e. without attaching any tag), there's no way to call operator on
+; them and thus we can't put them into the dispatch table. For sum/product
+; expressions, we type-tagged them e.g., (make-sum 'x 1) has the tag '+
+
+; b) and c) are about installing differentiation procedures for sum/product/exponent
+; expression types into the dispatch table.
+
+; d) When installing differentiation procedures for various types, we'll need
+; to change the operator and type order as well e.g., (put '+ 'deriv proc)
+; But for this whole thing to make sense, we have to think of a derivative 
+; datatype and +, *, ** as valid operations defined on that type - but the 
+; problem is derivative datatype doesn't make sense - why would we create 
+; derivative objects at all? Normally, we have expressions and we want to 
+; find derivatives of them.
+; 
+; It makes more sense to define an expression datatype and procedures +, *
+; etc... on them. So, we should be doing (put '+ 'expression proc)
+
+; Ex 2.74
+; We'll implement a simple dispatch table using lists so we can actually 
+; build a working company-employee database system.
+
+; Our dispatch table is implemented as two procedures put and get.
+; Whenever we register a new operator for a datatype, we must change the value
+; of this dispatch-table.
+(let ((table '()))
+
+  (define (put-internal operator type procedure)
+    (let ((key (cons operator type)))
+      (set! table
+        (cons (cons key procedure)
+              (filter (lambda (e) (not (equal? key (car e)))) table)))))
+
+  (define (get-internal operator type)
+    (let ((match (filter (lambda (e) (equal? (cons operator type) (car e)))
+                         table)))
+      (if (null? match)
+        (error "Given operator/type combination not registered.")
+        (cdr (car match) ))))
+
+  ; Define the put/get variables at global level.
+  (set! put put-internal)
+  (set! get get-internal))
+
+; let's now define the `apply-generic` procedure as in the book.` 
+; `op` - operator (abstract procedure) name
+; `args` - parameters for the operator
+; Applies the matching procedure from dispatch table to the given arguments and
+; returns the result or throws an error when there is no match.
+(define (apply-generic op . args)
+  (let ((types (map type-tag args)))
+    (let ((proc (get op types)))
+      (apply proc (map contents args)))))
+
+; Now, to solve the actual problem, we need 2 abstract data types - employee 
+; and personnel-file.
+;
+; The `employee` datatype must support `get-salary` and `get-name` abstract 
+; procedures.
+;
+; The `personnel-file` datatype must support `get-record`, `add-record` and
+; `delete-record` abstract procedures.
+;
+; As an example implementation, we'll use name/salary pairs for employees and
+; list of employee records for personnel-file representations. It should be 
+; noted that representations for these objects are independent - these objects 
+; only interact with each other through their interfaces, if at all.
+
+; employee datatype using a pair representation.
+(begin
+  (define EMP-TAG 'employee-pair)
+
+  (define (make-employee name salary)
+    (attach-tag EMP-TAG (cons name salary)))
+  
+  (define (get-name employee)
+    (car employee))
+  (define (get-salary employee)
+    (cdr employee))
+
+  (put 'make-employee (list EMP-TAG) make-employee)
+  (put 'get-name (list EMP-TAG) get-name)
+  (put 'get-salary (list EMP-TAG) get-salary))
+
+; `get-name` abstract procedure for employee datatype.
+(define (get-name employee)
+  (apply-generic 'get-name employee))
+
+; `get-salary` abstract procedure for employee datatype.
+(define (get-salary employee)
+  (apply-generic 'get-salary employee))
+
+; `make-employee-pair` constructor creates an employee object with name 
+; and salary. For each employee representation, we can create similar
+; constructors.
+(define (make-employee-pair name salary)
+  ((get 'make-employee '(employee-pair)) name salary))
+
+; Personnel-file abstract interface
+;
+; `get-record` accepts an employee name and returns either nil or an employee
+; record with the given name.
+;
+; `add-record` accepts an employee object and adds it into its file.
+;
+; `delete-record` accepts an employee name and deletes the record with the name
+; if it exists.
+
+; Instead of having add-record and delete-record modify the personnel-file 
+; object, they return a new modified(with a record added/removed resp.)
+; personnel-file
+
+; List representation for personnel-file
+; For the moment, we ignore checking for duplicate employee names.
+(begin
+  (define PERSONNEL-FILE-LIST 'personnel-file-list)
+  
+  (define (make-personnel-file)
+    (attach-tag PERSONNEL-FILE-LIST '()))
+
+  (define (get-record record-list)
+    (lambda (emp-name)
+    (let ((matches (filter (lambda (emp) (equal? emp-name (get-name emp))) 
+                           record-list)))
+      (if (null? matches)
+        '()
+        (car matches)))))
+
+  (define (add-record record-list employee)
+      (attach-tag PERSONNEL-FILE-LIST (cons employee record-list)))
+
+  ; Note, here we use get-name abstract procedure of employee objects.
+  (define (delete-record record-list)
+    (lambda (emp-name)
+    (attach-tag PERSONNEL-FILE-LIST
+        (filter 
+          (lambda (emp) (not (equal? emp-name (get-name emp)))) 
+          record-list))))
+
+  (put 'get-record (list PERSONNEL-FILE-LIST) get-record)
+  (put 'make-personnel-file (list PERSONNEL-FILE-LIST) make-personnel-file)
+  (put 'add-record (list PERSONNEL-FILE-LIST) add-record)
+  (put 'delete-record (list PERSONNEL-FILE-LIST) delete-record))
+
+; `make-personnel-file-list` constructor for personnel files.
+(define (make-personnel-file-list)
+  ((get 'make-personnel-file '(personnel-file-list))))
+
+; get-record, add-record and delete-record abstract procedures in the 
+; personnel-file interface. We can't directly use apply-generic because
+; sometimes our procedures accept raw strings as arguments. Note also that
+; internal procedure implementations accept stripped-off contents of objects.
+(define (get-record personnel-file emp-name)
+  (let ((proc (get 'get-record (list (type-tag personnel-file)))))
+    ((proc (contents personnel-file)) emp-name)))
+
+(define (add-record personnel-file employee)
+  (let ((proc (get 'add-record (list (type-tag personnel-file)))))
+    (proc (contents personnel-file) employee)))
+
+(define (delete-record personnel-file emp-name)
+  (let ((proc (get 'delete-record (list (type-tag personnel-file)))))
+    ((proc (contents personnel-file)) emp-name)))
+
+; Now we have 2 abstract data types `employee` and `personnel-file` and we 
+; have one representation for each.
+
+; `find-employee-record` is a higher level procedure that takes a list of 
+; `personnel-file` objects and find all the records among them with matching
+; employee name.
+(define (find-employee-record personnel-files emp-name)
+  (filter
+    ; Because our `get-record` abstract procedure may return an empty list
+    ; if no matching record is found, we must filter them out.
+    (lambda (entry) (not (null? entry))) 
+    (map
+      (lambda (file) (get-record file emp-name))
+      personnel-files)))
