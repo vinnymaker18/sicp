@@ -4,8 +4,15 @@
 
 ; Data abstraction is the idea of separating how a compound data object is used
 ; from how such an object is represented. It enables us in thinking at a higher 
-; conceptual level, just as we were able to do with procedural abstraction.
+; conceptual level, just as we were able to do with procedural abstraction. It
+; also enables us to mix and match multiple representations of data.
 
+; Main technique that enables data abstraction is the usage of generic interfaces
+; for using/manipulating data - these interfaces work across different represe-
+; ntations and even different types of data altogether, the user level code
+; need not worry about the underlying structure or implementation and focus on
+; higher level concerns.
+;
 ; Scheme has an in-built gcd function. 
 
 ; Ex 2.1, make-rat, numer, denom and print-rat procedures. Make-rat will work with 
@@ -148,9 +155,13 @@
 ; Intuitively, church numeral n represents n-time repeated application of a
 ; function.
 
-; Addition of two Church numerals n and m is simply composition of n and m.
+; Addition of two Church numerals n and m.
 ; (define add-church n m)
-;   (lambda (f) (n (m f))))
+;   (lambda (f)
+;	(let ((g (m f)) (h (n f)))
+;	   (lambda (x) (h (g x))))))
+
+; Multiplication of church numerals is simply their composition.
 
 ; Ex 2.7 Interval arithmetic.
 (define (make-interval a b)
@@ -215,6 +226,10 @@
 (define (make-center-percent center tolerance)
   (let ((width (* 0.01 (abs center) tolerance)))
     (make-interval (- center width) (+ center width))))
+
+; Ex 2.13
+; Under small tolerance assumptions, tolerance of product of
+; two intervals is sum of their tolerances.
 
 (define (center interval)
   (let ((a (lower-bound interval)) (b (upper-bound interval)))
@@ -378,7 +393,14 @@
 ; Total weight of a binary mobile is the sum of all weights in it.
 ; We can construct a list of all weights in the mobile and sum them.
 (define (total-weight mobile)
-  (apply + (fringe mobile)))
+  (define (branch-weight branch)
+    (let ((st (branch-structure branch)))
+      (if (number? st)
+        st
+        (total-weight st))))
+  
+  (+ (branch-weight (left-branch mobile)) 
+     (branch-weight (right-branch mobile))))
 
 ; Whether the mobile is balanced. 
 (define (balanced? mobile)
@@ -436,7 +458,7 @@
 
 ; Ex 2.35.
 (define (count-leaves tree)
-  (accumulate (lambda (x y) (+ 1 y)) 0 (fringe tree)))
+  (length (fringe tree)))
 
 ; Ex 2.36
 (define (accumulate-n op init seqs)
@@ -512,8 +534,6 @@
     (unique-triples n)))
 
 ; Ex 2.42 8 queens problem.
-
-
 ; n stands for board-size - nxn board.
 (define (queens n)
   (define empty-board '())
@@ -679,7 +699,7 @@
 ; thus if we have a form like ''abcdef, it's equal? to '(quote abcdef)
 ; which is a list containing 2 symbols 'quote and 'abcdef
 ; this is why we can call car on expressions like ''abcdef and we'll get
-; quote.
+; the symbol 'quote, which the interpreter displays without the quote.
 
 ; Section 2.3.2 Symbolic differentiation.
 
@@ -755,8 +775,7 @@
 ; sum expressions. Main idea is that deriv procedure depends only on
 ; addend/augend abstractions, but not on internal representations which
 ; improves code modularity and allows programmers to experiment with 
-; various representation schemes. Additionally, choosing good abstractions
-; improves extensibility of programs as seen in this example. 
+; various representation schemes.
 (define (deriv expr var)
   (cond
     ((number? expr) 0)
@@ -1343,3 +1362,307 @@
 ; It's not going to be additive. With data directed programming, by simply adding 
 ; new implementations and regsiter them in the table, we don't have to change
 ; any existing code. So, DDP is to be preferred here.
+
+; Section 2.5
+; We learn to build procedures that are generic over not only different
+; representations, but over different kinds of objects altogether.
+
+; Ex 2.77
+; We assume that complex number interface has already been defined, its two
+; representations implemented and installed.
+;
+; We have the object '(complex (rectangular 3 4)). Internally, complex 
+; arithmetic package deals with objects of rectangular and polar 
+; representations. When we include the new statements suggested by Alyssa,
+; we're defining a new generic `magnitude` procedure for numbers (though it
+; only works with complex numbers for now).
+;
+; Overall, apply-generic is called twice.
+;   1) - (apply-generic 'magnitude '(complex (rectangular 3 4)))
+;        which translates to (magnitude '(rectangular 3 4)) where magnitude is
+;        the generic procedure for complex numbers, which again calls 
+;   2) - (apply-generic 'magnitude '(rectangular 3 4)) which essentially 
+;       computes the hypotenuse.
+
+; Ex 2.78
+; We can get away without using type tags for scheme numbers by using 
+; number? primitive.
+; type-tag will then look like
+; (define (type-tag data)
+;    (if (number? data) 
+;          'scheme-number
+;          (if (pair? data) (car data) (error "Invalid data"))))
+;
+; contents will also be similarly modified - first calls number?, if matches
+; then simply returns the data, otherwise strips off the tag.
+;
+; attach-tag will simply return any primitive number as it is, without
+; attaching any tag. 
+
+; Ex 2.79
+; We assume equ? will be called with two arguments of same type - either both
+; are rationals or both are complex or both are primitive numbers. To do this
+; we must implement this operation for all the three types. 
+; Note here that scheme's `=` builtin checks if two numbers are equal in value.
+;
+; scheme-numbers -> (equ? num1 num2) = (= num1 num2)
+; rationals -> (equ? rat1 rat2) = (= (* (numer rat1) (denom rat2)) (* (numer
+; rat2) (denom rat1)))
+; complex -> (equ? comp1 comp2) = (and (= (real comp1) (= real comp2)) 
+;            (= (imag comp1) (imag comp2)))
+
+; We install the implementations like this (within our primitive arith. package)
+; (put 'equ? '(scheme-number scheme-number) equ?)
+
+; Then we can simply write generic procedure `equ?` as 
+(define (equ? num1 num2)
+  (apply-generic 'equ? num1 num2))
+
+; Ex 2.80
+; Similar exercise to that of 2.79, define implementations for the three
+; types, install them in dispatch table, define the `zero?` generic procedure
+; using apply-generic.
+
+; Ex 2.81
+; a) Because the `expt` generic procedure is implemented only for integers, 
+; (expr complex1 complex2) will raise an error, because even after trying 2 
+; ways of coercions, no matching implementation will be found.
+;
+; b) We can modify `get-coercion` such that (get-coercion t t) returns t for
+; all types t. Then apply-generic can work as it is.
+;
+; c) We can check in `apply-generic` if the two arguments are of same type and
+; avoid coercion. But modifying `get-coercion` is the cleaner approach.
+
+; Ex 2.82
+; Even with this modification, `apply-generic` only looks for procedures in the
+; dispatch table whose argument types are all same. Suppose we have a generic
+; procedure fp that takes three numbers and it only has an implementation for
+; the type combination '(scheme-number complex complex). This combination wont
+; be tried.
+
+; Ex 2.83
+; Hierarchy is integer -> rational -> real -> complex
+(define (raise-integer number)
+  (make-rat number 1))
+(define (raise-rational number) ; denominator is not zero for rationals
+  (make-real (/ (numer number) (denom number))))
+(define (raise-real number)
+  (make-complex-from-real-imag (number) 0))
+; For complex numbers, raise does nothing, returns the input itself.
+(define (raise-complex number)
+  number)
+
+(put 'raise 'integer raise-integer)
+(put 'raise 'rational raise-rational)
+(put 'raise 'real raise-real)
+(put 'raise 'complex raise-complex)
+
+; Now, the generic `raise` is defined as
+(define (raise number)
+  (apply-generic 'raise number))
+
+; Ex 2.84
+; For each type hierarchy, if we can find out it's level in the hierarchy,
+; then we can figure out which type is higher up by comparing their levels. 
+; e.g., in the integer -> rational -> real -> complex hierarchy, we can think 
+; of integer having level 3, rational at 2, real at 1 and complex at 0.
+; Higher level number means lower position in the hierarchy.
+; 
+; To compute the levels of types in a hierarchy, all we need to know is 
+; the highest type in that hierarchy. Let's assume 'complex is the highest
+; level for this exercise.
+(define highest-level 'complex)
+
+(define (find-type-level data)
+  (if (equal? (type-tag data) highest-level)
+    0
+    (+ 1 (find-type-level (raise data)))))
+
+; With `highest-level` and `find-type-level` defined, it's easy to add new
+; types into the hierarchy. If we're adding a supertype of current highest
+; type, then we simply update the value of `highest-level` and implement
+; `raise` for this new type and the old highest type. Otherwise, we must
+; implement `raise` for this new type and also possibly need to modify `raise`
+; for a type just one level lower.
+
+; Ex 2.85
+; `project` is like the inverse of `raise`. One way to implement `project` is
+; - for complex numbers, if the imaginary part is zero (can be checked with
+; zero?), then project returns (make-real (real-part num)), otherwise it
+; doesn't change the argument - returns the number as it is. For real numbers, 
+; we must pick a close enough (within an accepted error range) rational number.
+; We can convert rationals to integers if their denominators divide numerators.
+; For integers, project does nothing.
+
+(define (project-integer num)
+  num)
+(define (project-complex num)
+  ; real-part and imag-part are generic procedures we defined for complex
+  ; numbers.
+  (let ((r (real-part num)) (c (imag-part num)))
+    (if (zero? c)
+      (make-real r)
+      num)))
+(define (project-rational num)
+  (let ((n (numer num)) (d (denom num)))
+    (if (= 0 (remainder n d))
+      (make-integer (/ n d))
+      num)))
+(define (project-real num)
+  ; error = 10^-9
+  ; Pick n and d s.t. num - error <= n / d <= num + error
+  ; pick large enough d s.t. d * error >= 1, then n = ceiling(d * (num - error))
+  ; We must modify `equ?` for reals. Two reals are considered equal if they're 
+  ; within the error range.
+  (let ((d 1000000000))
+    (make-rational (ceiling (* d (num - error))) d)))
+
+; We can install project-* into our dispatch table as below
+; (put 'project integer project-integer)
+; (put 'project real project-real)
+; ....
+(define (project num)
+  (apply-generic 'project num))
+
+; Now we can define the `drop` procedure as follows. We first project the given
+; number and compare the projected type to original. If they're equal, we return
+; the original argument as it is - no more dropping is possible. Otherwise, 
+; we return (drop projected)
+(define (drop num)
+  (let ((t (type-tag num)))
+    (let ((projected (project num)))
+      (if (eq? t (type-tag projected))
+        num
+        (drop projected)))))
+
+; In the numeric type tower hierarchy above, we managed to drop all the way down to
+; the lowest level. In some hierarchies dropping may not be possible from an
+; intermediate level - e.g., in some programs it makes sense to disallow 
+; dropping reals to rationals (because it can't be done exactly in general case). 
+; Drop procedure defined above will work as expected even in such scenarios - 
+; it stops at that level from where further dropping is impossible.
+
+; Ex 2.86
+; We want to be able to handle complex numbers where magnitudes, angles, 
+; real and imaginary parts are of any generic number type. We assume that
+; complex number type is the supertype of all these argument types. Because in 
+; mathematics, sine and cosine can operate on complex numbers. If x is a 
+; complex number, sin(x) and cos(x) are also complex. Using Euler's formula
+; e^(ix) = cos(x) + i * sin(x), we can compute the cos and sin of any complex
+; number in general. 
+;
+; The trick is then to implement `sin` and `cos` for complex numbers, which can
+; be done using 3 formulae.
+; cos(a + ib) = cos(a) * cos(ib) - sin(a) * sin(ib)
+; sin(a + ib) = cos((pi / 2 - a) + i * (-b))
+; e^(ix) = cos(x) + i * sin(x)
+; but e^(ix) = 1 + (ix) / 1! + (ix)^2 / 2! ...
+; e^ix = (1 - x^2 / 2! + x^4 / 4! ...) + i (x / 1! - x^3 / 3! + ...)
+; thus cos(x) = (1 - x^2 / 2! + x^4 / 4! ...)
+; and sin(x) = (x / 1! - x^3 / 3! ...)
+; thus cos(ix) = (1 - (ix)^2 / 2! ...)
+; and a similar formula for sin(ix) 
+
+; Once `sin` and `cos` have been implemented for complex numbers, we can
+; install them in the dispatch table.
+; (put 'sin '(real) sin)
+; (put 'cos '(real) cos)
+; (put 'sin '(complex) sin-complex)
+; (put 'cos '(complex) cos-complex)
+
+; And now `sin` and `cosine` implementations are installed, redefine sin and 
+; cos using `apply-generic`
+;
+; When dealing with generic real and imaginary parts, it's not clear enough
+; what will the analogues for magnitude and angle computations look like.
+;
+; Section 2.5.3 Symbolic Algebra
+;
+; We'll limit ourselves to polynomial arithmetic. In this discussion, by a 
+; polynomial, we mean a syntactic expression with an indeterminate. Such an
+; expression will have terms where each term is a coefficient multiplied by
+; the power of the indeterminate. (e.g. 3 * x^4). We will define two operations
+; on polynomials - addition and multiplication. Two polynomials must have the
+; same indeterminate for us to be able to add or multiply them.
+
+; Data objects are polys, term-lists and terms.
+;
+; poly object interface - `add-poly`, `mul-poly`, `variable`, `term-list` and
+;                       - `make-poly`
+; `add-poly` and `mul-poly` are also the polynomial implementtions for `add` 
+; and `mul` generic operations.
+
+; term-list object interface - `make-term-list`, `empty-term-list?`,
+;                            - `first-term`, `rest-of-terms`, `add-terms`,
+;                            - `mul-terms`
+
+(define (install-polynomial-package)
+
+  ; polynomial type tag.
+  (define (tag data)
+    (attach-tag 'polynomial data))
+
+  ; Constructor and selectors.
+  (define (make-poly variable term-list)
+    (tag (cons variable term-list)))
+  (define (variable poly)
+    (car poly))
+  (define (term-list poly)
+    (cdr poly))
+
+  ; `add` and `mul` implementations
+  (define (add-poly poly1 poly2)
+    (if (same-variable? (variable poly1) (variable poly2))
+      (make-poly (variable poly1) 
+                 (add-terms (term-list poly1) (term-list poly2)))
+      (error "Polynomials must have the same variable - add-poly")))
+
+  (define (mul-poly poly1 poly2)
+    (if (same-variable? (variable poly1) (variable poly2))
+      (make-poly (variable poly1)
+                 (mul-terms (term-list poly1) (mul-terms poly2)))
+      (error "Polynomials must have the same variable - mul-poly")))
+
+  ; Register add-poly and mul-poly as `add` and `mul` implementations
+  ; for polynomials respectively.
+  (put 'add '(polynomial polynomial) add-poly)
+  (put 'mul '(polynomial polynomial) mul-poly)
+
+  ; Register constructors and selectors for polynomials.
+  (put 'make-poly '(polynomial)
+       (lambda (var terms) (make-poly var terms)))
+  (put 'variable '(polynomial) variable)
+  (put 'term-list '(polynomial) term-list)
+
+  'done)
+
+; term-list interface - `the-empty-termlist`, `is-empty-termlist?`,
+;                     - `adjoin-term`, `add-terms`, `mul-terms`, `first-term`
+;                     - `rest-terms`
+; 
+; We'll do both sparse-list and dense-list implementations for term-list
+; objects.
+;
+(define (install-term-list-package)
+
+  ; term-list type tag 
+  (define (tag data)
+    (cons 'term-list data))
+
+  ; add-
+  (define (add-terms terms1 terms2)
+    (cond
+      ((is-empty-termlist? terms1) terms2)
+      ((is-empty-termlist? terms2) terms1)
+      (else
+        (let ((t1 (first-term terms1)) (t2 (first-term terms2))
+              (r1 (rest-terms terms1)) (r2 (rest-terms terms2)))
+          (cond
+            ((> (order t1) (order t2)) (adjoin-term t1 (add-terms r1 terms2)))
+            ((< (order t1) (order t2)) (adjoin-term t2 (add-terms terms1 r2)))
+            (else
+              (adjoin-term (make-term (order t1) (add (coeff t1) (coeff t2)))
+                           (add-terms r1 r2))))))))
+
+  'done)
