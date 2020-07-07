@@ -73,8 +73,7 @@
     (iter 0 trials))
 
 ; Now, the mathematical constant pi can be estimated using the approximate
-; equality
-; 6/pi^2 =~ (monte-carlo 10000 relatively-prime-random-pair)
+; equality 6/pi^2 =~ (monte-carlo 10000 relatively-prime-random-pair)
 
 ; For chicken scheme, random generators are in the chicken random module.
 (import (chicken random))
@@ -1206,3 +1205,734 @@
   (let ([ret (make-connector)])
     (adder ret b a)
     ret))
+
+; Ex 3.38
+; a) Possible values are 35, 40, 45, 50
+; b) If processes can be interleaved, other values like 55, 80, 110 are also
+; possible.
+
+; Ex 3.39
+; 11, 100, 101, 121 are possible.
+
+; Ex 3.40
+; a) 10^6, 10^4, 10^2, 10^5, 10^3
+; b) 10^6
+
+; Ex 3.41
+; Even without this modification, it's still safe to access balance e.g., even 
+; if we read balance in the middle of a deposit txn, we'll either get the balance 
+; before the deposit took place or after the deposit. In general, we won't get 
+; any impossible value(A value is possible if it could've happened after a
+; series of serialized withdrawal/deposit transactions).
+
+; Ex 3.42
+; This is a safe change to make and concurrency wise everything still works as
+; before. Each account still has its own serializer object. This is a possible
+; optimization that may save some object creation overhead (depending on the 
+; serializer implementation) every time a deposit or withdraw message is called.
+
+; Ex 3.43
+; If the processes are run sequentially, then each exchange can be considered
+; to be run in isolation from others. After each such isolated exchange, 
+; balances are swapped between a pair of accounts and the third account remains 
+; unchanged. Thus after each such exchange, the set of balances remains the 
+; same {10, 20, 30}.
+;
+; In the first version of account-exchange program, suppose we have two
+; concurrent processes - one trying to exchange accounts A, B and the other 
+; accounts B, C.
+;
+; Each process can be rewritten as follows.
+;
+; exchange(account A, account B)
+;   b1 = read (balance A)
+;   b2 = read (balance B)
+;   diff = b1 - b2
+;   add (balance A) (-diff)
+;   add (balance B) (+diff)
+
+; (balance X) can be thought of as a shared memory location that stores the
+; balance of account X. 
+; add in the above exchange function can be considered uninterruptible 
+; operation because it's protected by serializers. And as we saw earlier, 
+; read operation is also serialized in effect(because it can't read an illegal
+; value).
+;
+; Consider the sequence of operations below
+;
+; 1. Processes P1 and P2 both read account balances.
+;       Now for P1 -> b1 = 10, b2 = 20, diff = -10
+;           for P2 -> b1 = 20, b3 = 30, diff = -10
+;       Balances -> A = 10, B = 20, C = 30
+; 2. P1 subs 10 from account B. 
+;       Balances -> A = 10, B = 10, C = 30
+; 3. P2 subs 10 from account C. 
+;       Balances -> A = 10, B = 10, C = 20
+; 4. P2 adds 10 to account B.
+;       Balances -> A = 10, B = 20, C = 20 
+; 5. P1 adds 10 to account A.
+;       Balances -> A = 20, B = 20, C = 20
+;
+; Now the balances are {20, 20, 20} which is clearly illegal.
+;
+; On the other hand, the total amount across all the three accounts is
+; preserved once all the exchanges are finished. This is because whenever a process
+; reads balances and takes the difference d, it will add d to one account and
+; subtract d from another account. So the total balance is preserved (once all the
+; exchanges are complete).
+;
+; And if we don't even use individual account serializers, then all the
+; operations can be interleaved arbitrarily and total chaos ensues.
+
+; Ex 3.44
+; Ben's method works and Louis is wrong. 
+; 
+; Exchange problem is a more difficult problem because not only the total balance 
+; across all a/cs should be preserved, but the set of all balances should also 
+; be the same. This is because for an exchange involving a deposit to A with ;
+; a withdraw from B to work correct, no changes should be made to these accounts 
+; between the time their balances are read and deposit/withdraw are made. 
+
+; Ex 3.45
+; This can cause deadlocks at runtime. `serialized-exchange` works by acquiring
+; both the accounts' serializers and then calling the deposit/withdraw routines
+; If the deposit/withdraw routines themselves are serialized, then the process
+; is stuck waiting for a mutex to be acquired & released while the mutx is 
+; acquired by this very process.
+
+; Ex 3.46
+; Suppose processes P1 and P2 are trying to acquire a mutex M. If the
+; test-and-set! procedure is not atomic, they can both read the cell value as 
+; false - when this happens, they both set it to true and 'acquire' the mutex
+; and proceed to access critical shared resources.
+
+; A dummy mutex implementation.
+(define (make-mutex)
+  (define (me message)
+    (cond
+      ((eq? message 'acquire) #t)
+      ((eq? message 'release) #t)
+      (else (error "Illegal message for mutex object."))))
+  me)
+
+; Ex 3.47
+;
+; A) Semaphore implementation using a mutex and a counter.
+; B) Similar to the mutex implementation, we use the lower level 
+; test-and-set! primitive instead of a mutex.
+(define (make-semaphore n)
+
+  ; Mutex to protect access to the counter variable below. 
+  (define mutex (make-mutex))
+
+  ; Counter to represent the no. of processes currently accessing the resource.
+  ; `read-counter` and `change-counter` are the user's interface to this
+  ; counter.
+  (define counter 0)
+
+  ; This is called to check the current counter value.
+  (define (read-counter)
+    (mutex 'acquire)
+    (define val counter)
+    (mutex 'release)
+    val)
+
+  ; x = -1 or 1.
+  (define (change-counter x)
+    (mutex 'acquire)
+    (set! counter (+ counter x))
+    (mutex 'release)
+    #t)
+
+  ; Check the current counter value - if counter < n, then increment it and 
+  ; return. Otherwise block(or busy-wait).
+  (define (sem-acquire)
+    (let ([val (read-counter)])
+      (if (< val n)
+        (change-counter 1)
+        (sem-acquire))))
+
+  ; Decrement the current counter value.
+  (define (sem-release)
+    (change-counter -1))
+
+  (define (me message)
+    (cond
+      ((eq? 'acquire) (sem-acquire))
+      ((eq? 'release) (sem-release))
+      (else (error "Illegal message for semaphore object."))))
+  me)
+
+; Ex 3.48
+; Deadlocks can occur because of cyclic dependencies in processes trying to 
+; access shared resources. Consider the situation below with 3 processes and
+; 3 mutexes. (let's assume the corresponding acct_nos are in the order 
+; A < B < C)
+;
+; P1 -> (acquired A, waiting for B)
+; P2 -> (acquired B, waiting for C)
+; P3 -> (acquired C, waiting for A)
+;
+; With numbered accounts, the above situation is not possible because P3 would 
+; not have acquired C without first acquiring A. And this is true in general
+; for any no. of processes trying to exchange accounts using
+; serialized-exchange.
+;
+; To design numbered accounts, we can use a global (mutex protected) integer 
+; counter and whenever we create an account, increment it and attach it to the
+; account object. Account object interface will need to provide a method for
+; users to access the account number.
+
+; Ex 3.49
+; 
+
+; Section 3.5
+; Stream processing
+
+; Streams can be thought of as lazily evaluated sequences.
+
+; Ex 3.50
+; stream-null?, cons-stream, stream-car, stream-cdr
+
+; Ex 3.51
+; (stream-map proc x) =~ (cons-stream (proc (stream-car x)) 
+;                               (stream-map proc (stream-cdr x)))
+; (stream-ref x n) =~ (stream-car x) or (stream-ref (stream-cdr x) (n - 1))
+;
+; 0, 1, 2, 3, 4, 5 are printed one per line and 5 is returned.
+; 6, 7 are printed one per line and 7 is returned. 
+
+; Ex 3.52
+;
+; Memoized version
+; After stream-ref, sum is 136. stream-ref prints 136 to console.
+; Underlying `seq` is partially evaluated at this point. If display-stream is
+; called now, the items evaluated so far will be printed, but they wont be
+; added to sum again. After display-stream, sum is 210. It prints values 
+; 10, 15, 45, 55, 105, 120, 190, 210 one per line.
+;
+; Unmemoized version
+; Results would be different from the memoized version. Note the streams here
+; are odd streams - which have the first element already evaluated. More common
+; in real world are even streams which only evaluate even the first element on
+; demand. Results for this unmemoized version would  be different for 
+; odd and even streams
+
+; Ex 3.53
+; It generates powers of 2 - (1, 2, 4, 8, 16 ...)
+
+; Chicken Scheme has streams implemented as per SRFI-41. We must install 
+; that module on the system and then import it. We must accordingly use the 
+; primitives and special forms provided in that library, most notably 
+; stream-cons instead of cons-stream.
+
+(import streams)
+
+(define (add-streams s1 s2)
+  (stream-map + s1 s2))
+
+; Ex 3.54
+; With this definition, (stream-ref factorials n) = (n + 1)!
+(define (mul-streams s1 s2)
+  (stream-map * s1 s2))
+
+(define ones (stream-cons 1 ones))
+(define integers (stream-cons 1 (add-streams ones integers)))
+
+(define factorials (stream-cons 1 
+    (mul-streams (stream-cdr integers) factorials)))
+
+
+; Ex 3.55
+; Note how `partial-sums` is recursively defined in terms of itself. In
+; computing the nth term, it utilizes its own (n-1)th term.
+(define (partial-sums s)
+
+  (define partials 
+    (stream-cons
+      (stream-car s)
+      (add-streams (stream-cdr s) partials)))
+    
+    partials)
+
+; Ex 3.56 
+; Merge two sorted streams while eliminating duplicates.
+(define (merge s1 s2)
+  (cond
+    ((stream-null? s1) s2)
+    ((stream-null? s2) s1)
+    (else
+      (let ([s1car (stream-car s1)] [s2car (stream-car s2)])
+        (cond
+          ((< s1car s2car) (stream-cons s1car (merge (stream-cdr s1) s2)))
+          ((< s2car s1car) (stream-cons s2car (merge s1 (stream-cdr s2))))
+          (else (stream-cons 
+                  s1car 
+                  (merge (stream-cdr s1) (stream-cdr s2)))))))))
+
+; Scale a stream of numbers by a constant factor.
+(define (scale-stream s x)
+  (cond
+    ((stream-null? s) stream-null)
+    (else
+      (stream-cons
+        (* x (stream-car s))
+        (scale-stream (stream-cdr s) x)))))
+
+; Hamming numbers are of the form 2^a * 3^b * 5^c, where a, b, c are
+; non-negative integers.
+(define S (stream-cons
+            1
+            (merge (scale-stream S 2) 
+                   (merge (scale-stream S 3) (scale-stream S 5)))))
+
+; Ex 3.57
+; fibs is defined as (stream-cons 0 
+;                       (stream-cons 1 
+;                           (add-streams (stream-cdr fibs) fibs)))
+; n - 1 additions will need to be performed to compute nth fibonacci number.
+; Without memoization, O(F(n) - 1) additions are performed to compute nth 
+; fibonacci number.
+
+; Ex 3.58
+; Digits of fractional part of (`num` / `den`) in base `radix`. With 
+; `num` < `den`, integral part is zero and is ignored.
+; (expand 1 7 10) gives the result 0.14285....
+; (expand 3 8 10) gives the result 0.37500....
+
+; Ex 3.59
+; A) Integral of a power series A
+(define (integral-series A)
+  (define (iter A n)
+    (cond
+      ((stream-null? A) stream-null)
+      (else (stream-cons 
+              (exact->inexact (/ (stream-car A) n))
+              (iter (stream-cdr A) (+ 1 n))))))
+
+  (iter A 1))
+
+; integral (e^x)  = e^x and e^0 = 1
+(define exp-series (stream-cons 1 (integral-series exp-series)))
+
+; B) Sin and Cosine serie.
+; sin x = integral (cos x) and sin(0) = 0
+; cos x = integral (- sin x) and cos(0) = 1
+
+(define sin-series 
+  (stream-cons 0 (integral-series cos-series)))
+
+(define cos-series
+  (stream-cons 1 (integral-series (scale-stream sin-series -1))))
+
+; Ex 3.60
+; Adding & multiplying two power series A and B - these are infinite sequences.
+(define (add-series A B)
+  (stream-map + A B))
+
+(define (mul-series A B)
+  (stream-cons 
+    (* (stream-car A) (stream-car B)) 
+    (add-series 
+      (scale-stream (stream-cdr B) (stream-car A)) 
+      (mul-series (stream-cdr A) B))))
+
+; With add-series, mul-series, sin and cos defined as above, we can run the 
+; following test to verify the identity sin^2(x) + cos^2(x) = 1
+(define (test-verify-pythagorean-identity)
+
+  ; sin^2(x) & cos^2(x)
+  (define sin-square (mul-series sin-series sin-series))
+  (define cos-square (mul-series cos-series cos-series))
+
+  ; sin^2(x) + cos^2(x)
+  (define one (add-series sin-square cos-square))
+
+  ; Take the first 100 terms of the sum series and check that the first term
+  ; is one and everything else is zero.
+  (print (stream->list (stream-take 100 one)))
+  
+  'done)
+
+; Ex 3.61
+; Inverse of a power series with constant term = 1.
+(define (invert-unit-series S)
+
+  (define inv-series 
+    (stream-cons 1 (mul-series (scale-stream (stream-cdr S) -1) inv-series)))
+  
+  inv-series)
+
+; Ex 3.62
+; div-series 
+;
+; Let's first define a more general invert-series whose constant term need not
+; be 1, but has to be non-zero though.
+; 1 / A = 1 / (a0 * A') where A' is a series with constant term = 1
+; 1 / A = (scale-stream (invert-unit-series A'))
+(define (invert-series A)
+  (let ([a0 (stream-car A)] [ar (stream-cdr A)])
+    (if (zero? a0)
+      (error "Constant term cannot be zero for inverse to exist")
+      (let ([scaled (scale-stream A (/ 1.0 a0))])
+        (scale-stream (invert-unit-series scaled) (/ 1.0 a0))))))
+
+(define (div-series A B)
+  (mul-series A (invert-series B)))
+
+; tan(X) = sin(X) / cos(X) = div-series sin cos
+(define tan-series (div-series sin-series cos-series))
+
+; Ex 3.63
+; Every time `cons-stream` is called, it creates a fresh unevaluated stream. In
+; the version without the local variable `guesses`, (sqrt-stream x) recursively
+; calls (sqrt-stream x) which creates a new unevaluated stream, instead of 
+; utilizing the already existing partially evaluated stream and thus leads to
+; redundant computations.
+;
+; Without memoization, even the local variable version will involve redundant
+; computations. 
+;
+; In recursively defined sequences like sqrt-stream, factorials, prime filters
+; etc... it's always good to use a single stream object for the sequence with
+; a memoized implementation. As our computations proceed, more and more
+; elements will be evaluated and added onto this stream and these values won't
+; have to be computed again.
+
+; Ex 3.64
+; Let's first define the `sqrt-stream` sequence. We assume the argument will be
+; non-negative.
+(define (sqrt-stream x)
+
+  (define (improve a)
+    (/ (+ a (/ x a)) 2.0))
+
+  (define seq
+    (stream-cons
+      1.0
+      (stream-map improve seq)))
+  
+  seq)
+
+(define (stream-limit s tolerance)
+  (let ([s0 (stream-ref s 0)] [s1 (stream-ref s 1)])
+    (if (< (abs (- s1 s0)) tolerance)
+      s1
+      (stream-limit (stream-cdr s) tolerance))))
+
+; Ex 3.65
+; Not doing this.
+
+; Infinite streams of pairs.
+
+; Ex 3.66
+; Interleaves two streams s.t the resulting stream can generate any element
+; from either stream(eventually, in finite time, in a countable way)
+(define (interleave-streams A B)
+  (if (stream-null? A)
+    B
+    (stream-cons (stream-car A)
+                 (interleave-streams B (stream-cdr A)))))
+
+; Generates every possible pair (x, y) s.t x <- s, y <- t and every such pair
+; is generated eventually(in finite time, in a countable way).
+(define (pairs s t)
+  (if (or (stream-null? s) (stream-null? t))
+    stream-null
+    (let ([s0 (stream-car s)] [sr (stream-cdr s)]
+          [t0 (stream-car t)] [tr (stream-cdr t)])
+      (stream-cons (list s0 t0)
+                   (interleave-streams
+                        (stream-map (lambda (tt) (list s0 tt)) tr)
+                        (pairs sr tr))))))
+
+; Ex 3.67
+; We need to mix in the rest of the first column as well and it'll recursively 
+; include all other columns' missing parts.
+(define (pairs2 s t)
+  (if (or (stream-null? s) (stream-null? t))
+    stream-null
+    (let ([s0 (stream-car s)] [sr (stream-cdr s)]
+          [t0 (stream-car t)] [tr (stream-cdr t)])
+      (stream-cons (cons s0 t0)
+                   (interleave-streams
+                        (stream-map (lambda (s) (cons s t0)) sr)
+                        (interleave-streams 
+                          (stream-map (lambda (t) (cons s0 t)) tr) 
+                          (pairs2 sr tr)))))))
+
+; Ex 3.68
+; `stream-cons` is a special form that treats its 2nd argument as an
+; expression. The earlier definition of `pairs` uses this `stream-cons` special
+; form.
+;
+; Louis's `pairs` however uses `interleave-streams` which is a procedure that
+; expects 2 streams as its arguments. So instead of treating `(pairs sr tr)` 
+; as an expression, interleave-streams tries to evaluate it and thus the
+; definition goes into a infinite recursive loop never terminating.
+
+; Ex 3.79
+; triples -> defined using pairs.
+; This is inefficientG
+(define (triples S T U)
+  (if
+    (or (stream-null? S)
+         (stream-null? T)
+         (stream-null? U)) 
+        stream-null
+    (let ([s0 (stream-car S)] [sr (stream-cdr S)]
+          [t0 (stream-car T)] [tr (stream-cdr T)]
+          [u0 (stream-car U)] [ur (stream-cdr U)])
+      (let ([s0t0s (stream-map (lambda (uu) (list s0 t0 uu)) ur)]
+            [s0t0u0 (list s0 t0 u0)]
+            [s0trurs (stream-map (lambda (pr) (cons s0 pr)) (pairs tr ur))])
+        (stream-cons
+            s0t0u0
+            (interleave-streams
+              s0trurs
+              (interleave-streams
+                s0t0s
+                (triples sr tr ur))))))))
+
+; Using the above triples generator, we can select only pythagorean triples
+; as follows. Problem with generating pythagorean triples this way is that 
+; to reach the triple (x, y, z) it takes exponential steps in x.
+(define (check-pyth? x y z)
+  (= (square z) (+ (square x) (square y))))
+
+(define pythagorean-triples
+  (stream-filter
+    (lambda (tpl) (apply check-pyth? tpl))
+    (triples integers integers integers)))
+
+; Ex 3.70, weighted merging of sequences. 
+(define (merge-weighted weight A B)
+  (cond
+    ((stream-null? A) B)
+    ((stream-null? B) A)
+    (else
+      (let ([a0 (stream-car A)] [ar (stream-cdr A)]
+            [b0 (stream-car B)] [br (stream-cdr B)])
+        (cond
+          ((< (weight a0) (weight b0)) 
+                (stream-cons a0 (merge-weighted weight ar B)))
+          ((> (weight a0) (weight b0))
+                (stream-cons b0 (merge-weighted weight A br)))
+          (else
+                (stream-cons a0 (merge-weighted weight ar B))))))))
+
+; Instead of interleaving, it merges the parts by a weight function. Still 
+; respects the ordering of pairs - for each pair (ai, bj) in the result, i <= j
+(define (weighted-pairs weight A B)
+  (cond
+    ((or (stream-null? A) (stream-null? B)) stream-null)
+    (else
+      (let ([a0 (stream-car A)] [ar (stream-cdr A)]
+            [b0 (stream-car B)] [br (stream-cdr B)])
+        (stream-cons
+          (list a0 b0)
+          (merge-weighted
+            weight
+            (stream-map (lambda (b) (list a0 b)) br)
+            (weighted-pairs weight ar br)))))))
+
+; Ordered integer pairs with weight(i, j) = i + j and i <= j
+(define sum-weighted-ipairs (weighted-pairs (lambda (pr) (+ (car pr) (cadr pr))) 
+                                            integers
+                                            integers))
+; Similarly for any pair weight function.
+
+; Ex 3.71
+; weight(i, j) = i^3 + j^3
+
+(define (sum-of-cubes pr)
+  (define (cube x)
+    (* x x x))
+  
+  (+ (cube (car pr)) (cube (cadr pr))))
+
+(define sum-cubed-pairs (weighted-pairs sum-of-cubes
+                                          integers
+                                          integers))
+
+; We can zip sum-cubed-pairs with its stream-cdr and select only those 
+; with matching weights.
+(define adj-pairs (stream-map cons
+                              sum-cubed-pairs
+                              (stream-cdr sum-cubed-pairs)))
+
+; This definition finds the first 6 ramanujan numbers as 1729, 4104, 13832,
+; 20683, 32832 and 39312
+(define ramanujan-numbers
+  (stream-filter (lambda (ppr) (= (sum-of-cubes (car ppr)) 
+                                  (sum-of-cubes (cdr ppr))))
+                 adj-pairs))
+
+; Ex 3.72
+; Similar to 3.71, we take zip(s, cdr(s), cdr(cdr(s)) and filter for relevant
+; entries.
+
+; Ex 3.73
+; Let's first define the integrator circuit.
+; Returns the stream Si = C + SIGMA(Xj * dt, 1 <= j <= i)
+(define (integral X C dt)
+
+  (define X-scaled (scale-stream X dt))
+
+  (define S
+    (stream-cons C
+                 (add-streams S X-scaled)))
+  S)
+
+; Vi = V0 + (1 / C) * dt * SIGMA(i) + i * R
+(define (RC R C dt)
+
+  (lambda (i v0)
+    (add-streams
+      (scale-stream i R)
+      (integral (scale-stream i (/ 1.0 C)) v0 dt))))
+
+; Ex 3.74
+; Since Alyssa's `sign-change-detector` has the parameters new-val followed by
+; old-val, the missing expression is (stream-cons 0 sense-data)
+
+; Ex 3.75
+; At first, I couldn't figure out why Alyssa's solution is wrong. It turns out
+; that Alyssa's code is computing the new average from old average and new
+; value in stream. Instead, it should be computing new average from old stream
+; value and next stream value. Alyssa's procedure should be modified
+; accordingly and should be passed 3 arguments - stream, old_avg, old_value.
+; It should then compute the new_avg from old_value and next_value, compare
+; this new_avg with old_avg argument to detect sign changes.
+
+; Ex 3.76
+(define (average x y) (/ (+ x y) 2.0))
+
+; Note the change of parameter order from the order given in the book.
+(define (sign-change-detector old new)
+  (cond
+    ((and (< old 0) (> new 0)) 1)
+    ((and (> old 0) (< new 0)) -1)
+    (else 0)))
+
+; Smooth is the stream of consecutive averages of the input stream.
+(define (smooth sensor-data)
+  (stream-map average sensor-data (stream-cdr sensor-data)))
+
+; This approach is more modular because it allows us to swap out sign-change-
+; detector with another kind of detector. 
+(define (make-zero-crossings sensor-data)
+  (stream-map sign-change-detector (smooth sensor-data)))
+
+; Chicken Scheme has `delay` special form which generates promises and `force`
+; procedure which can be used to evaluate a promise. delay/force are thus a
+; lazy evaluation mechanism in Scheme. They cache the evaluated objects, so 
+; calling force twice on a promise will only do the computation once.
+
+; In lazy evaluation, parameters are evaluated only when they are actually
+; needed.
+
+; A delayed version of integral.
+(define (integral-delayed X-delayed C dt)
+  (define int
+    (stream-cons C
+                 (let ([X (force X-delayed)])
+                   (add-streams (scale-stream X dt) int))))
+  
+  int)
+
+; Solution for the differential equation dy/dt = f(y)
+; y = integral(stream-map f y, y0, dt) for some given initial value y0
+(define (solve-deriv f y0 dt)
+  (define y (integral-delayed (delay dy) y0 dt))
+  (define dy (stream-map f y))
+  y)
+
+; If f(y) = y, then solve-deriv(f, 1, 0.001) approximates the function e^(y * 0.001). 
+; Then e can be calculated as (stream-ref (solve-deriv f 1 0.001) 1000)
+
+; Ex 3.77
+; Another version of integral-delayed. Assumes X-delayed is a delayed inifinite
+; stream. Produces the same result for e as before.
+(define (integral-delayed X-delayed C dt)
+  (stream-cons C
+               (let ([X (force X-delayed)])
+                 (integral-delayed (delay (stream-cdr X)) 
+                                   (+ C (* dt (stream-car X) )) dt))))
+
+; Ex 3.78
+; Solving the 2nd-degree differential equation 
+; d^2(y)/d^2(t) = a * (dy / dt) + b * y
+; We have three streams y, dy, ddy
+; 
+(define (solve-2nd a b y0 dy0 dt)
+  (define y (integral-delayed (delay dy) y0 dt))
+
+  (define dy (integral-delayed (delay ddy) dy0 dt))
+
+  ; ddy = a * dy + b * y
+  (define ddy (add-streams (scale-stream dy a) (scale-stream y b)))
+
+  y)
+
+; Ex 3.79, generalizing the procedure above to solve the differential equation
+; d^2(y)/d^2(t) = f(dy / dt, y)
+(define (solve-2nd-general f y0 dy0 dt)
+  (define y (integral-delayed (delay dy) y0 dt))
+
+  (define dy (integral-delayed (delay ddy) dy0 dt))
+
+  ; ddy = f(dy, y) = stream-map f dy y
+  (define ddy (stream-map f dy y))
+
+  y)
+
+; Ex 3.80, RLC circuit
+(define (RLC R L C dt)
+
+  (define (f vc0 i0)
+    (define vc (integral-delayed (delay dvc) vc0 dt))
+    (define i (integral-delayed (delay di) i0 dt))
+    (define dvc (scale-stream i (/ -1.0 C)))
+
+    (define (combo v i)
+      (* (- v (* i R)) (/ 1.0 L)))
+
+    (define di (stream-map combo vc i))
+    
+    (cons vc i))
+
+  f)
+
+; As we can see now, explicit usage of `delay` and `force` gives us great 
+; flexibility in our programs. 
+
+; Ex 3.81, rand procedure implementation from Ex 3.6 on a stream of action
+; requests (generate or reset state), without assignment. I think the point of 
+; this problem is somewhat undermined by the reality that underneath, random 
+; number manipulation involves dealing with a lot of state, assignments and 
+; other side effects.
+
+; `action-stream` consists of requests. Each request is either the symbol
+; 'generate or the symbol 'reset and produces an output stream - for each 
+; generate request a random integer is produced and for a reset request, a #t 
+; is produced.
+;
+; We don't have `rand` like in the book. Instead, we accept an initial value
+; and an updater procedure.
+(define (rand-seq action-stream init rand-update)
+  (if (stream-null? action-stream)
+    stream-null
+    (let ([action (stream-car action-stream)]
+          [others (stream-cdr action-stream)])
+      (cond
+        ((pair? action) 
+            (stream-cons #t
+                (rand-seq others (rand-update (cdr action)) rand-update)))
+        (else
+          (let ([val (rand-update init)])
+            (stream-cons val
+                         (rand-seq others val rand-update))))))))
+
+; Ex 3.81 - stream versions of monte-carlo and estimate-integral procedures.
+; I'm not going to implement these.
