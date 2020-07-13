@@ -1,3 +1,35 @@
+(load "utils.ss")
+
+; Ex 1.3
+(define (sum-squares-two-largest x y z)
+
+  ; Smallest of the 3.
+  (define smallest (min x y z))
+  
+  ; We take the sum of squares of all 3 nos and subtract the square of the
+  ; smallest
+  (- (+ (square x) (square y) (square z)) (square smallest)))
+
+; Ex 1.4
+; It computes a + b if b > 0 and a - b if b <= 0. In effect, it computes
+; a + abs(b)
+
+; Ex 1.5
+; Applicative order - arguments are first evaluated.
+; Normal order - Lazy evaluation
+; In applicative order, x and y are both evaluated first - in doing so, the 
+; evaluator goes into an infinite recursion because of `p`. 
+; In normal order, only x is evaluated (inside procedure) and because it's
+; zero, second parameter is not evaluated and thus program finishes. 
+
+; Ex 1.6
+; Because `new-if` is a procedure and applicative order is the default, 
+; both then-clause and else-clause are first evaluated. Desired behavior is 
+; that only one of them is evaluated depending upon whether the predicate 
+; is true or false.
+;
+; `sqrt-iter` recursively calls itself ad infinitum and program never finishes.
+
 ; A fixed point of a function f is a value x s.t f(x) = x. The following
 ; iterative technique can sometime converge to a fixed point of the function.
 (define (fixed-point f initial-guess)
