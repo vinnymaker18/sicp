@@ -130,9 +130,10 @@
         ; Note the operator subexpression will evaluate to a procedure object
         ; which contains within it the base environment for its application.
         ((application? expr) 
-                             (apply-meta (actual-value (operator expr) env)
-                                     (operands expr)
-                                     env))
+                             (apply-meta (eval-meta (operator expr) env)
+                                (map (lambda (operand) (eval-meta operand env))
+                                     (operands expr))
+                                env))
         (else (error "Unknown expression type."))))
 
 ; `apply` takes two arguments, a procedure and a list of arguments to be
@@ -148,11 +149,11 @@
     ((primitive-procedure? procedure) 
         (apply-primitive-procedure
           procedure
-          (list-of-arg-values arguments env)))
+          arguments))
     ((compound-procedure? procedure)
         (eval-sequence (procedure-body procedure)
                        (extend-environment (procedure-parameters procedure)
-                                           (list-of-delayed-args arguments env)
+                                           arguments
                                            (procedure-environment procedure))))
     (else (error "Unknown procedure type - apply-meta"))))
 
@@ -187,7 +188,7 @@
 ; `eval-if` evaluates the predicate part and then one of the consequent / 
 ; alternative parts.
 (define (eval-if expr env)
-  (if (true? (actual-value (if-predicate expr) env))
+  (if (true? (eval-meta (if-predicate expr) env))
     (eval-meta (if-consequent expr) env)
     (eval-meta (if-alternative expr) env)))
 
@@ -775,7 +776,7 @@
 (define (repl)
   (let ([expr (read)])
     (if (not (eq? expr 'quit))
-      (let ([val (actual-value expr the-global-environment)])
+      (let ([val (eval-meta expr the-global-environment)])
         (print val)
         (repl))
       'done)))
