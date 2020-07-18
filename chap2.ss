@@ -228,8 +228,8 @@
     (make-interval (- center width) (+ center width))))
 
 ; Ex 2.13
-; Under small tolerance assumptions, tolerance of product of
-; two intervals is sum of their tolerances.
+; Under small tolerance assumptions, tolerance of product of two intervals is 
+; sum of their tolerances.
 
 (define (center interval)
   (let ((a (lower-bound interval)) (b (upper-bound interval)))

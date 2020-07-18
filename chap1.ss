@@ -15,8 +15,8 @@
 ; a + abs(b)
 
 ; Ex 1.5
-; Applicative order - arguments are first evaluated.
-; Normal order - Lazy evaluation
+; Applicative order - Arguments are eagerly evaluated.
+; Normal order - Arguments are lazily evaluated.
 ; In applicative order, x and y are both evaluated first - in doing so, the 
 ; evaluator goes into an infinite recursion because of `p`. 
 ; In normal order, only x is evaluated (inside procedure) and because it's
@@ -30,8 +30,8 @@
 ;
 ; `sqrt-iter` recursively calls itself ad infinitum and program never finishes.
 
-; A fixed point of a function f is a value x s.t f(x) = x. The following
-; iterative technique can sometime converge to a fixed point of the function.
+; A fixed point of a function f is a number x s.t f(x) = x. The following
+; iterative technique can sometimes converge to a fixed point of the function.
 (define (fixed-point f initial-guess)
 
   (define (fixed-point-iter guess)
