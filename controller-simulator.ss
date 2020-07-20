@@ -57,7 +57,9 @@
 ; another supported operation which prints a value to stdout.
 (define (simulate program)
 
-  ; Find the position of a label within a routine.
+  (stack-push 'quit)
+
+  ; Find the position of a label within the program.
   (define (find-label-pos label)
 
     (define (iter expressions i)
@@ -73,6 +75,9 @@
 
   (define (quit? instr)
     (eq? instr 'quit))
+
+  (define (perform? instr)
+    (eq? instr 'perform))
 
   (define (test? instr)
     (tagged-list? instr 'test))
@@ -101,7 +106,7 @@
         (register-get (cadr part))
         (cadr part))))
 
-  ; source can be of form (const x), (reg register-name) or (read) or 
+  ; source can be of form (const x), (reg register-name) or (op read) or 
   ; (label label-name)
   (define (read-from-input-source source)
     (let ([source-type (car source)]
@@ -110,15 +115,22 @@
         ((eq? source-type 'const) source-name)
         ((eq? source-type 'reg) (register-get source-name))
         ((eq? source-type 'label) source-name)
+        ; We read a number from stdin.
+        ((and
+           (eq? source-name 'read)
+           (eq? source-type 'op))
+            (read))
         (else "Unknown source type" source-type))))
 
   (define (operator-func op)
-    (cdr (assoc op (list (cons '+ +)
-                    (cons '- -)
-                    (cons '> >)
-                    (cons '< <)
-                    (cons '= =)
-                    (cons '* *)))))
+    (cdr (assoc op (list    (cons '+ +)
+                            (cons '- -)
+                            (cons '> >)
+                            (cons '< <)
+                            (cons '= =)
+                            (cons 'read read)
+                            (cons 'print print)
+                            (cons '* *)))))
 
   (let ([icount 0] [pc 0] [test-result #f])
 
@@ -159,6 +171,9 @@
             (if test-result
               (goto (goto-label instr))
               (iter)))
+        ((perform? instr)
+            (apply-op (cdr instr))
+            (iter))
         ((assign? instr)
             (let ([reg-name (cadr instr)])
               (register-set reg-name
@@ -177,6 +192,5 @@
     
     (iter)))
 
-(stack-push 'quit)
 ; Now we read a single controller program from stdin and simulate it.
 (print (simulate (read)))

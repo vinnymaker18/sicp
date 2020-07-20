@@ -153,3 +153,6 @@
 ; Ex 5.5
 ; I've written a simple register machine simulator and seen that it works with
 ; factorial, fibonacci and exponent controllers.
+
+; Note, we're using slightly different conventions in our controller programs.
+; `read` and `print` operations are not yet supported.
