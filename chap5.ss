@@ -155,7 +155,7 @@
 ; factorial, fibonacci and exponent controllers.
 
 ; Note, we're using slightly different conventions in our controller programs.
-; `read` and `print` operations are not yet supported.
+; In particular, 
 
 ; Ex 5.6
 ; After the label 'afterfib-n-1', we have three instructions 
@@ -163,3 +163,13 @@
 ; restore and save is that we're assigning to continue the top most value on
 ; stack (without popping it). But right after, we're setting continue to label 
 ; 'afterfib-n-2'. So those 2 restore and save operations are unnecessary.
+
+
+; Section 5.2
+; We've implemented the register machine simulator as a single script - that
+; reads a controller program from stdin, simulates it and produces an output.
+; We've seen that this simulator produces correct outputs with factorial,
+; fibonacci and exponent controller programs. In the book, simulator is defined
+; as a procedure that accepts a program as an input. Because all the exercises 
+; in section 5.2 use this model, we'll once again implement the simulator, this 
+; time as suggested in the book.
