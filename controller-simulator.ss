@@ -57,6 +57,7 @@
 ; another supported operation which prints a value to stdout.
 (define (simulate program)
 
+  ; Our simulator exits upon seeing an instruction label named 'quit
   (stack-push 'quit)
 
   ; Find the position of a label within the program.

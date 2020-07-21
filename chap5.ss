@@ -109,7 +109,7 @@
 ; Registers - n, result, continue, temp
 ; Constants - 0, 1, 2
 ; Labels - fibo-begin, fibo-resume-1, fibo-resume-2, fibo-done
-; Operations - +, -, <
+; Operations - +, -, *, <, >, read, print
 ;
 ; Initially, caller saves return address on stack, places n in register 'n' and
 ; calls this routine. Upon completion, result will be available in the register
@@ -150,9 +150,16 @@
 ; b)
 ; Check expt-controller-iterative.ss file.
 
-; Ex 5.5
+; Ex 5.5 & 5.7
 ; I've written a simple register machine simulator and seen that it works with
 ; factorial, fibonacci and exponent controllers.
 
 ; Note, we're using slightly different conventions in our controller programs.
 ; `read` and `print` operations are not yet supported.
+
+; Ex 5.6
+; After the label 'afterfib-n-1', we have three instructions 
+; restore continue, assign to register n and save continue. The effect of 
+; restore and save is that we're assigning to continue the top most value on
+; stack (without popping it). But right after, we're setting continue to label 
+; 'afterfib-n-2'. So those 2 restore and save operations are unnecessary.
