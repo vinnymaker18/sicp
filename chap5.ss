@@ -152,10 +152,8 @@
 
 ; Ex 5.5 & 5.7
 ; I've written a simple register machine simulator and seen that it works with
-; factorial, fibonacci and exponent controllers.
-
-; Note, we're using slightly different conventions in our controller programs.
-; In particular, 
+; factorial, fibonacci and exponent controllers. Note, we've used slightly 
+; different conventions in our controller programs.
 
 ; Ex 5.6
 ; After the label 'afterfib-n-1', we have three instructions 
@@ -164,12 +162,395 @@
 ; stack (without popping it). But right after, we're setting continue to label 
 ; 'afterfib-n-2'. So those 2 restore and save operations are unnecessary.
 
-
 ; Section 5.2
-; We've implemented the register machine simulator as a single script - that
-; reads a controller program from stdin, simulates it and produces an output.
-; We've seen that this simulator produces correct outputs with factorial,
-; fibonacci and exponent controller programs. In the book, simulator is defined
-; as a procedure that accepts a program as an input. Because all the exercises 
-; in section 5.2 use this model, we'll once again implement the simulator, this 
-; time as suggested in the book.
+; We've implemented the register machine simulator as a single script (this is
+; found in the controller-simulator.ss file) - that reads a controller program 
+; from stdin, simulates it and produces an output. We've seen that this 
+; simulator produces correct outputs with factorial, fibonacci and exponent 
+; controller programs. In the book, simulator is defined as a procedure that 
+; accepts a program as an input. Because all the exercises in section 5.2 use 
+; this model, we'll once again implement the simulator, this time as suggested 
+; in the book.
+
+; We'll use the term 'machine model' to denote a simulator object. When the
+; message `start` is called on the model, the program is simulated and its
+; output displayed.
+;
+; `make-machine`, `start`, `set-register-contents!`, `get-register-contents`
+; are the machine model interface.
+(define (make-machine register-names operations controller-program)
+  (let ([machine (make-new-machine)])
+    (for-each (machine 'allocate-register) register-names)
+    ((machine 'install-operations) operations)
+    ((machine 'install-instruction-sequence) 
+        (assemble controller-program machine))
+    machine))
+
+; We'll represent each register as a procedure with local state.
+(define (make-register name)
+  (let ([contents '*unassigned*])
+
+    (define (dispatch message)
+      (cond
+        ((eq? message 'get) contents)
+        ((eq? message 'set) (lambda (new-value) (set! contents new-value)))
+        (else (error "Unknown request for register named " name))))
+
+    dispatch))
+
+(define (get-contents register)
+  (register 'get))
+
+(define (set-contents! register value)
+  ((register 'set) value))
+
+; We similarly represent the program stack as a procedure with local state.
+(define (make-stack)
+  (let ([stack '()])
+
+    (define (dispatch message)
+      (cond
+        ((eq? message 'push) (lambda (val) (set! stack (cons val stack))))
+        ((eq? message 'pop)
+            (if (null? stack)
+              (error "Empty stack")
+              (let ([top-item (car stack)])
+                (set! stack (cdr stack))
+                top-item)))
+        ((eq? message 'initialize)
+            (set! stack '()))
+        (else "Invalid message for a stack object " message)))
+
+    dispatch))
+
+(define (pop stack)
+  (stack 'pop))
+
+(define (push stack value)
+  ((stack 'push) value))
+
+; We now have the 2 main components of a register machine - register set and 
+; stack. Let's now implement the `make-new-machine` procedure which sets up an
+; empty machine upon which any program can be loaded.
+(define (make-new-machine)
+  (let* ([pc (make-register 'pc)]
+         [flag (make-register 'flag)]
+         [stack (make-stack)]
+         [the-instruction-sequence '()]
+         [the-ops (list (cons 'initialize-stack
+                              (lambda () (stack 'initialize))))]
+         [register-table (list (cons 'pc pc) (cons 'flag flag))])
+  
+  ; Create a new register with the given name.
+  (define (allocate-register name)
+    (if (assoc register-table name)
+      (error "Register with name " name " already exists")
+      (set! register-table (cons (cons name (make-register name))
+                                 register-table))))
+
+  ; Look up the value of the register with the given name.
+  (define (lookup-register name)
+    (let ([match (assoc name register-table)])
+      (if (not match)
+        (error "No register with name " name "exists in the table.")
+        (cdr match))))
+
+  (define (execute)
+    (let ([insts (get-contents pc)])
+      (if (null? insts)
+        'done
+        (begin
+          (instruction-execution-proc (car insts))
+          (execute)))))
+
+  (define (dispatch message)
+    (cond 
+      ((eq? message 'start) (set-contents! pc the-instruction-sequence)
+                            (execute))
+      ((eq? message 'install-instruction-sequence)
+            (lambda (seq) (set! the-instruction-sequence seq)))
+      ((eq? message 'allocate-register) allocate-register)
+      ((eq? message 'get-register) lookup-register)
+      ((eq? message 'install-operations)
+            (lambda (ops) (set! the-ops (append the-ops ops))))
+      ((eq? message 'stack) stack)
+      ((eq? message 'operations) the-ops)
+      (else (error "Ilegal message for register machine objects."))))
+
+  dispatch))
+
+; A few convenience operations on register machines.
+(define (start machine)
+  (machine 'start))
+
+(define (get-register machine register-name)
+  ((machine 'get-register) register-name))
+
+(define (get-register-contents machine register-name)
+  (get-contents (get-register machine register-name)))
+
+(define (set-register-contents! machine register-name value)
+  (set-contents! (get-register machine register-name) value)
+  'done)
+
+; The assembler translates controller program instructions into actually 
+; executable (on our register machine simulator) instructions.
+(define (assemble controller-program machine)
+  (extract-labels
+    controller-program
+    (lambda (insts labels)
+      (update-insts! insts labels machine)
+      insts)))
+
+; `extract-labels` scans the controller program text, separates out labels and
+; instructions and maps labels to their locations in the instruction sequence.
+(define (extract-labels controller-program receive)
+  (if (null? controller-program)
+    (receive '() '())
+    (extract-labels (cdr controller-program)
+      (lambda (insts labels)
+        (let ([next-inst (car controller-program)])
+          (if (symbol? next-inst)
+            (receive insts (cons (make-label-entry next-inst insts) labels))
+            (receive (cons (make-instruction next-inst) insts)
+                     labels)))))))
+
+(define (update-insts! insts labels machine)
+  (let ([pc (get-register machine 'pc)]
+        [flag (get-register machine 'flag)]
+        [stack (machine 'stack)]
+        [ops (machine 'operations)])
+    (for-each
+      (lambda (inst)
+        (set-instruction-execution-proc!
+          inst
+          (make-execution-procedure
+            (instruction-text inst)
+            labels machine pc flag stack ops)))
+      insts)))
+
+(define (make-instruction inst)
+  (cons inst '()))
+
+(define (instruction-text inst)
+  (car inst))
+
+(define (instruction-execution-proc inst)
+  (cdr inst))
+
+(define (set-instruction-execution-proc! inst proc)
+  (set-cdr! inst proc))
+
+; Each label entry is a pair of label and a pointer to its location within 
+; the instruction sequence list.
+(define (make-label-entry label insts)
+  (cons label insts))
+
+(define (lookup-label labels label-name)
+  (let ([match (assoc labels label-name)])
+    (if (not match)
+      (error "No such label found")
+      (cdr match))))
+
+; Ex 5.8
+; a will have a value of 3 when control reaches label 'there'. This is because
+; `extract-label` joins actual instructions in-order, joins labels in a
+; separate list in-order with each label entry pointing to its location in the 
+; instruction sequence. Because it joins those 2 lists in-order and because in 
+; lookup-label `assoc` finds the first matching entry, first goto moves pc to 
+; first 'here', which sets the value of a to 3.
+
+(define (make-execution-procedure inst labels machine pc flag stack ops)
+  (cond
+    ((eq? (car inst) 'assign) (make-assign inst machine labels ops pc))
+    ((eq? (car inst) 'test) (make-test inst machine labels ops flag pc))
+    ((eq? (car inst) 'branch) (make-branch inst machine labels flag pc))
+    ((eq? (car inst) 'goto) (make-goto inst machine labels pc))
+    ((eq? (car inst) 'save) (make-save inst machine stack pc))
+    ((eq? (car inst) 'restore) (make-restore inst machine stack pc))
+    ((eq? (car inst) 'perform) (make-perform inst machine labels ops pc))
+    (else (error "Illegal instruction"))))
+
+; assign instruction - (assign x op args) where op is either a primitive
+; operator (with no args) or an operator expression like (op add) arg ... 
+(define (make-assign inst machine labels ops pc)
+  (let* ([target (get-register machine (assign-reg-name inst))]
+        [value-exp (assign-value-exp inst)]
+        [value-proc
+          (if (operation-exp? value-exp)
+            (make-operation-exp value-exp machine labels ops)
+            (make-primitive-exp (car value-exp) machine labels))])
+    (lambda ()
+      (set-contents! target (value-proc))
+      (advance-pc pc))))
+
+(define (assign-reg-name assign-instruction)
+  (cadr assign-instruction))
+
+(define (assign-value-exp assign-instruction)
+  (cddr assign-instruction))
+
+(define (advance-pc pc)
+  (set-contents! pc (cdr (get-contents pc))))
+
+(define (make-test inst machine labels ops flag pc)
+  (let ([condition (test-condition inst)])
+    (if (operation-exp? condition)
+      (let ([condition-proc
+              (make-operation-exp condition machine labels ops)])
+        (lambda ()
+          (set-contents! flag (condition-proc))
+          (advance-pc pc)))
+      (error "Illegal test instruction"))))
+
+(define (test-condition test-inst)
+  (cdr test-inst))
+
+; branch instruction - (branch (label x))
+(define (make-branch inst machine labels flag pc)
+  (let ([dest (branch-dest inst)])
+    (if (label-exp? dest)
+      (let ([insts (lookup-label labels (label-exp-label dest))])
+        (lambda ()
+          (if (get-contents flag)
+            (set-contents! pc insts)
+            (advance-pc pc))))
+      (error "Illegal branch destination"))))
+
+; Extract the destination from a branch instruction.
+(define (branch-dest branch-inst)
+  (cadr branch-inst))
+
+; Check if expression is of form (label some-label)
+(define (label-exp? expr)
+  (and (list? expr) (eq? (car expr) 'label)))
+
+; Extract the destination label from a branch instruction's destination part.
+(define (label-exp-label dest-expr)
+  (cadr dest-expr))
+
+; goto instruction - (goto (label x)) or (goto (reg y))
+(define (make-goto inst machine labels pc)
+  (let ([dest (goto-dest inst)])
+    (cond
+      ((label-exp? dest)
+        (let ([insts (lookup-label labels (label-exp-label dest))])
+          (lambda ()
+            (set-contents! pc insts))))
+      ((register-exp? dest)
+        (let* ([reg (get-register machine (register-exp-reg dest))])
+          (lambda ()
+            (set-contents! pc (get-contents reg)))))
+      (else (error "Illegal goto instruction")))))
+
+(define (goto-dest inst)
+  (cadr inst))
+
+(define (register-exp? dest)
+  (and (list? dest) (eq? (car dest) 'reg)))
+
+(define (register-exp-reg dest)
+  (cadr dest))
+
+; save instruction - save x. Saves the contents of register x on the stack.
+(define (make-save inst machine stack pc)
+  (let ([reg (get-register machine (stack-inst-reg-name inst))])
+    (lambda ()
+      (push stack (get-contents reg))
+      (advance-pc pc))))
+
+; restore instruction - restore x. Pops a value from stack and saves it into
+; register x.
+(define (make-restore inst machine stack pc)
+  (let ([reg (get-register machine (stack-inst-reg-name inst))])
+    (lambda ()
+      (set-contents! reg (pop stack))
+      (advance-pc pc))))
+
+(define (stack-inst-reg-name stack-inst)
+  (cadr stack-inst))
+
+; perform instruction - e.g., (perform (op print)), performs the specified primitive 
+; operation.
+(define (make-perform inst machine labels ops pc)
+  (let ([action (perform-action inst)])
+    (if (operation-exp? action)
+      (let ([action-proc (make-operation-exp action machine labels ops)])
+        (lambda ()
+          (action-proc)
+          (advance-pc pc)))
+      (error "Illegal perform instruction"))))
+
+; Extract operation parts from a perform instruction.
+(define (perform-action action-inst)
+  (cdr action-inst))
+
+(define (tagged-list? expr tag)
+  (and (list? expr) (eq? tag (car expr))))
+
+(define (operation-exp? expr)
+  (and (pair? expr)
+       (tagged-list? (car expr) 'op)))
+
+; Primitive expressions are either (reg x), (const 1), (label z). We must
+; create a zero-argument procedure out of such expressions - which, when
+; evaluated return the value (stored in register x or constant 1 or position of
+; the label within the instruction sequence)
+(define (make-primitive-exp expr machine labels)
+  (cond
+    ((constant-exp? expr)
+        (let ([constant-value-expr (constant-exp-value expr)])
+          (lambda () constant-value-expr)))
+    ((register-exp? expr)
+        (let ([reg (get-register machine (register-exp-reg expr))])
+          (lambda () (get-contents reg))))
+    ((label-exp? expr)
+        (let* ([label-name (label-exp-label expr)]
+               [insts (lookup-label labels label-name)])
+          (lambda () insts)))
+    (else (error "Illegal primitive expression"))))
+
+(define (constant-exp? expr)
+  (tagged-list? expr 'constant))
+
+(define (constant-exp-value expr)
+  (cadr expr))
+
+; Operation expressions - (op +) arg1 arg2 ...
+(define (make-operation-exp expr machine labels ops)
+  (let ([operator (lookup-prim (operation-exp-op expr) ops)]
+        [operands (map (lambda (e) 
+                         (if (label-exp? e)
+                           (error "Labels not allowed as operands in operator expressions")
+                           (make-primitive-exp e machine labels)))
+                       (operation-exp-operands expr))])
+    (lambda ()
+      (apply operator (map (lambda (p) (p)) operands)))))
+
+; expr is of the form - (op +) 1 2
+(define (operation-exp-op expr)
+  (cadr (car expr)))
+
+(define (operation-exp-operands expr)
+  (cdr expr))
+
+(define (lookup-prim operator ops)
+  (let ([match (assoc operator ops)])
+    (if match
+      (cdr match)
+      (error "Unsupported operator"))))
+
+; Ex 5.9
+; We've modified `make-operation-exp` to raise an error when it sees a label for
+; one of the operands.
+
+; Ex 5.10
+; We've employed data abstraction and separated syntax handling from simulation
+; logic with the help of syntax procedures (e.g., `operation-exp-op`). This
+; enables us the change the syntax of our register machine instructions if we 
+; want without modifying core simulator logic.
+
+; Ex 5.12, 5.13, 5.15
+; We've done much of this in our first implemntation of the simulator.
+
+; Other exercises till 5.19 are interesting but I'm not doing them.
