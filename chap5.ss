@@ -554,3 +554,37 @@
 ; We've done much of this in our first implemntation of the simulator.
 
 ; Other exercises till 5.19 are interesting but I'm not doing them.
+
+; Section 5.3
+; Memory allocation and garbage collection.
+
+; In our register machine simulator implementation, we've used lists and list
+; operations to represent data objects like register table, stack etc... Basic
+; operations of our simulator like pushing/popping stack, setting register
+; values relied on list operations being primitive. Modern computers offer a 
+; linear address based view of computer memory and we must learn to represent
+; and perform our memory accesses using this linear address model.
+
+; We first learn to represent lists and implement list operations in terms of 
+; address arithmetic available on modern computers. We use typed pointers which
+; store the data type along with the value of a data object. This enables us to 
+; distinguish two data objects given just their pointers. We can also 'intern'
+; the symbols to optimize operations on symbols.
+
+; Scheme's vectors fit nicely into the linear address view of computer memory.
+; Access nth element of a vector is a constant time operation.
+
+; To represent pairs within our simulators, we use two vectors `the-cars` and 
+; `the-cdrs`. A pair can now be represented as the typed pointer ('pair', i) 
+; where i is an index into the cars and cdrs vectors. So this pair's car is 
+; located at the-cars[i] and it's cdr is located at the-cdrs[i].
+
+; Every data reference is done by the usage of (typed) pointers. e.g., If we
+; have a pair p and its value(index) is i, the-cars[i] stores the pointer to its car
+; element and the-cdrs[i] stores the pointer to its cdr element.
+
+; Two objects are said to be `eq?` if their pointers are identical (type & data 
+; stored (which is an integer for pairs and something else for other data
+; objects) in the pointer.
+
+; 

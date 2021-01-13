@@ -12,11 +12,10 @@
 ; ntations and even different types of data altogether, the user level code
 ; need not worry about the underlying structure or implementation and focus on
 ; higher level concerns.
-;
-; Scheme has an in-built gcd function. 
 
 ; Ex 2.1, make-rat, numer, denom and print-rat procedures. Make-rat will work with 
 ; positive and negative denominators.
+; Scheme has an in-built gcd function. 
 (define (make-rat n d)
   (if (< d 0)
     (make-rat (- n) (- d))
@@ -152,16 +151,19 @@
 ; 1 maps every r-func to itself. i.e., one(f) = f for all r-funcs f.
 ; 2 maps every r-func f to f o f (f of f). i.e. 2(f)(x) = f(f(x)) for all x.
 
-; Intuitively, church numeral n represents n-time repeated application of a
-; function.
+; Intuitively, church numeral n represents n-time repeated application of an
+; r-func
 
-; Addition of two Church numerals n and m.
+; Addition of two Church numerals n and m is like n+m-time repeated application
+; of an r-func.
+;
 ; (define add-church n m)
 ;   (lambda (f)
 ;	(let ((g (m f)) (h (n f)))
 ;	   (lambda (x) (h (g x))))))
 
 ; Multiplication of church numerals is simply their composition.
+; (define mul-church n m) (lambda (f) (n (m f)))
 
 ; Ex 2.7 Interval arithmetic.
 (define (make-interval a b)
@@ -203,7 +205,7 @@
   (let ((a (* x (lower-bound r))) (b (* x (upper-bound r))))
     (make-interval (min a b) (max a b))))
 
-; Ex 2.8, Sub-interval interval x - y = x + (-1) * y
+; Ex 2.8, Sub-interval x - y = x + (-1) * y
 (define (sub-interval r1 r2)
   (add-interval r1 (scale-interval -1 r2)))
 
